@@ -67,40 +67,37 @@ const Login = () => {
   };
 
   return (
-    <div className="min-h-screen flex items-center justify-center bg-gradient-to-br from-blue-700 via-purple-600 to-pink-400 animate-gradient-x px-4 py-8">
-      <style>
-        {`
-          .animate-gradient-x {
-            background-size: 200% 200%;
-            animation: gradientMove 8s ease-in-out infinite;
-          }
-          @keyframes gradientMove {
-            0%, 100% { background-position: left top; }
-            50% { background-position: right bottom; }
-          }
-        `}
-      </style>
+    <div 
+      className="min-h-screen flex items-center justify-center px-4 py-8"
+      style={{
+        backgroundImage: `url(/rgbg.png)`,
+        backgroundSize: 'cover',
+        backgroundPosition: 'center',
+        backgroundRepeat: 'no-repeat',
+        backgroundAttachment: 'fixed'
+      }}
+    >
       <div className="w-full max-w-md">
-        <div className="relative bg-white/80 backdrop-blur-2xl rounded-3xl shadow-2xl px-8 py-10 space-y-8 border border-white/40 transition-all duration-300 hover:shadow-blue-300">
+        <div className="relative bg-white/20 backdrop-blur-xl rounded-3xl shadow-2xl px-8 py-10 space-y-8 border border-white/30 transition-all duration-300 hover:shadow-blue-300">
           <div className="flex flex-col items-center mb-4">
-            <h1 className="text-3xl font-extrabold text-transparent bg-clip-text bg-gradient-to-r from-blue-700 via-purple-600 to-pink-500 tracking-wide drop-shadow-lg">
+            <h1 className="text-3xl font-extrabold text-white tracking-wide drop-shadow-2xl" style={{ textShadow: '2px 2px 4px rgba(0,0,0,0.7)' }}>
               IMMERGIX
             </h1>
-            <span className="text-xs text-gray-500 font-medium">A Reddington Global Consultancy Pvt. Ltd. Company</span>
+            <span className="text-xs text-white font-medium" style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.7)' }}>A Reddington Global Consultancy Pvt. Ltd. Company</span>
           </div>
           <div className="flex flex-col items-center">
             <div className="h-16 w-16 flex items-center justify-center rounded-full bg-gradient-to-br from-blue-600 to-purple-600 shadow-lg mb-2 animate-bounce">
               <User className="h-9 w-9 text-white" />
             </div>
-            <h2 className="mt-2 text-center text-4xl font-extrabold text-gray-900 drop-shadow-lg">
+            <h2 className="mt-2 text-center text-4xl font-extrabold text-white drop-shadow-2xl" style={{ textShadow: '2px 2px 4px rgba(0,0,0,0.7)' }}>
               Welcome Back
             </h2>
-            <p className="text-sm text-gray-500 mt-1 font-medium">Sign in to your LMS account</p>
+            <p className="text-sm text-white mt-1 font-medium" style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.7)' }}>Sign in to your LMS account</p>
           </div>
           <form className="space-y-6" onSubmit={handleSubmit} autoComplete="off">
             <div className="space-y-4">
               <div>
-                <label htmlFor="email" className="block text-sm font-semibold text-gray-700">
+                <label htmlFor="email" className="block text-sm font-semibold text-white" style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.7)' }}>
                   Email address
                 </label>
                 <div className="mt-1 relative">
@@ -110,7 +107,7 @@ const Login = () => {
                     type="email"
                     autoComplete="email"
                     required
-                    className="block w-full px-4 py-3 pl-12 rounded-xl bg-white/90 border border-gray-300 placeholder-gray-400 text-gray-900 shadow focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
+                    className="block w-full px-4 py-3 pl-12 rounded-xl bg-white/95 border border-white/50 placeholder-gray-400 text-gray-900 shadow-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
                     placeholder="Enter your email"
                     value={formData.email}
                     onChange={handleChange}
@@ -119,7 +116,7 @@ const Login = () => {
                 </div>
               </div>
               <div>
-                <label htmlFor="password" className="block text-sm font-semibold text-gray-700">
+                <label htmlFor="password" className="block text-sm font-semibold text-white" style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.7)' }}>
                   Password
                 </label>
                 <div className="mt-1 relative">
@@ -129,7 +126,7 @@ const Login = () => {
                     type={showPassword ? 'text' : 'password'}
                     autoComplete="current-password"
                     required
-                    className="block w-full px-4 py-3 pl-12 pr-12 rounded-xl bg-white/90 border border-gray-300 placeholder-gray-400 text-gray-900 shadow focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200"
+                    className="block w-full px-4 py-3 pl-12 pr-12 rounded-xl bg-white/95 border border-white/50 placeholder-gray-400 text-gray-900 shadow-lg focus:outline-none focus:ring-2 focus:ring-purple-500 focus:border-transparent transition-all duration-200"
                     placeholder="Enter your password"
                     value={formData.password}
                     onChange={handleChange}
@@ -167,7 +164,7 @@ const Login = () => {
               </button>
             </div>
             <div className="text-center mt-4">
-              <div className="text-sm text-gray-600 font-semibold">
+              <div className="text-sm text-white font-semibold" style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.7)' }}>
                 Demo Account:
               </div>
               {/* <div className="mt-2 space-y-1 text-xs text-gray-500">
@@ -176,7 +173,7 @@ const Login = () => {
               </div> */}
             </div>
           </form>
-          <div className="mt-6 text-center text-xs text-gray-400">
+          <div className="mt-6 text-center text-xs text-white/80" style={{ textShadow: '1px 1px 2px rgba(0,0,0,0.7)' }}>
             &copy; {new Date().getFullYear()} IMMERGIX LMS. All rights reserved.
           </div>
         </div>
