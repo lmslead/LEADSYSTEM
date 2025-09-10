@@ -419,7 +419,7 @@ const AdminDashboard = () => {
     
     // Check by organization name first, then by ID as fallback
     const isReddingtonByName = user?.organization?.name === 'REDDINGTON GLOBAL CONSULTANCY';
-    const isReddingtonById = user?.organization === '68c17bf5d8a7b0aa548feee3' || user?.organization?._id === '68c17bf5d8a7b0aa548feee3';
+    const isReddingtonById = user?.organization === '68b9c76d2c29dac1220cb81c' || user?.organization?._id === '68b9c76d2c29dac1220cb81c';
     
     const isReddington = isReddingtonByName || isReddingtonById;
     console.log('Is Reddington admin (by name):', isReddingtonByName);
