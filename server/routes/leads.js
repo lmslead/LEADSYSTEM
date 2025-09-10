@@ -1805,4 +1805,149 @@ router.get('/dashboard/follow-ups', protect, authorize('agent2', 'admin'), async
   }
 });
 
+// @desc    Reassign lead to another agent
+// @route   PUT /api/leads/:id/reassign
+// @access  Private (Admin of REDDINGTON GLOBAL CONSULTANCY only)
+router.put('/:id/reassign', protect, [
+  body('assignedTo')
+    .notEmpty()
+    .withMessage('assignedTo is required')
+    .isMongoId()
+    .withMessage('assignedTo must be a valid user ID'),
+  body('assignmentNotes')
+    .optional()
+    .trim()
+    .isLength({ max: 500 })
+    .withMessage('Assignment notes cannot exceed 500 characters')
+], handleValidationErrors, async (req, res) => {
+  try {
+    console.log('Reassign request body:', req.body);
+    console.log('Reassign request user:', req.user ? req.user.role : 'No user');
+    console.log('Lead ID to reassign:', req.params.id);
+
+    // Check if user is admin of REDDINGTON GLOBAL CONSULTANCY
+    if (req.user.role !== 'admin' && req.user.role !== 'superadmin') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only admins can reassign leads'
+      });
+    }
+
+    // For admin role, check if they're from REDDINGTON GLOBAL CONSULTANCY
+    if (req.user.role === 'admin') {
+      const adminOrganization = await Organization.findById(req.user.organization);
+      if (!adminOrganization || adminOrganization.name !== 'REDDINGTON GLOBAL CONSULTANCY') {
+        return res.status(403).json({
+          success: false,
+          message: 'Only REDDINGTON GLOBAL CONSULTANCY admins can reassign leads'
+        });
+      }
+    }
+
+    // Find the lead
+    let lead;
+    if (req.params.id.match(/^[0-9a-fA-F]{24}$/)) {
+      lead = await Lead.findById(req.params.id).populate('assignedTo createdBy', 'name email');
+    } else {
+      lead = await Lead.findByLeadId(req.params.id).populate('assignedTo createdBy', 'name email');
+    }
+
+    if (!lead) {
+      return res.status(404).json({
+        success: false,
+        message: 'Lead not found'
+      });
+    }
+
+    // Verify the target user exists and is agent2
+    const targetAgent = await User.findById(req.body.assignedTo);
+    if (!targetAgent) {
+      return res.status(404).json({
+        success: false,
+        message: 'Target agent not found'
+      });
+    }
+
+    if (targetAgent.role !== 'agent2') {
+      return res.status(400).json({
+        success: false,
+        message: 'Can only reassign leads to Agent 2 users'
+      });
+    }
+
+    if (!targetAgent.isActive) {
+      return res.status(400).json({
+        success: false,
+        message: 'Cannot assign lead to inactive agent'
+      });
+    }
+
+    // Update lead assignment
+    const previousAssignedTo = lead.assignedTo;
+    lead.assignedTo = req.body.assignedTo;
+    lead.assignedBy = req.user._id;
+    lead.assignedAt = getEasternNow();
+    lead.assignmentNotes = req.body.assignmentNotes || '';
+    
+    // Update tracking fields
+    lead.lastUpdatedBy = req.user.name || req.user.email;
+    lead.lastUpdatedAt = getEasternNow();
+    lead.updatedBy = req.user._id;
+
+    // EXPLICITLY clear adminProcessed flag when reassigning - Agent 2 needs to work on it
+    // This ensures old leads with adminProcessed=true become visible to Agent 2
+    lead.adminProcessed = false;
+
+    await lead.save();
+
+    // Populate the updated lead
+    await lead.populate(['assignedTo assignedBy createdBy updatedBy', 'name email']);
+
+    console.log('Lead reassigned successfully from', 
+      previousAssignedTo ? previousAssignedTo.name : 'unassigned', 
+      'to', targetAgent.name);
+
+    // Emit real-time update
+    if (req.io) {
+      const updateData = {
+        lead: lead,
+        reassignedBy: req.user.name,
+        previousAgent: previousAssignedTo ? previousAssignedTo.name : 'Unassigned',
+        newAgent: targetAgent.name
+      };
+
+      req.io.emit('leadReassigned', updateData);
+      // Emit to specific rooms
+      req.io.to('admin').emit('leadReassigned', updateData);
+      req.io.to('agent2').emit('leadReassigned', updateData);
+      
+      // Notify the specific agents if they're online
+      if (previousAssignedTo) {
+        req.io.to(`user_${previousAssignedTo._id}`).emit('leadReassigned', updateData);
+      }
+      req.io.to(`user_${targetAgent._id}`).emit('leadReassigned', updateData);
+    }
+
+    res.status(200).json({
+      success: true,
+      message: `Lead successfully reassigned to ${targetAgent.name}`,
+      lead: lead,
+      reassignmentDetails: {
+        previousAgent: previousAssignedTo ? previousAssignedTo.name : 'Unassigned',
+        newAgent: targetAgent.name,
+        reassignedBy: req.user.name || req.user.email,
+        reassignedAt: lead.assignedAt
+      }
+    });
+
+  } catch (error) {
+    console.error('Lead reassignment error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error reassigning lead',
+      error: process.env.NODE_ENV === 'development' ? error.message : {}
+    });
+  }
+});
+
 module.exports = router;

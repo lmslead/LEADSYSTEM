@@ -71,6 +71,19 @@ export const SocketProvider = ({ children }) => {
         }
       });
 
+      socket.current.on('leadReassigned', (data) => {
+        try {
+          // Show notification to relevant users
+          if (user.role === 'admin' || user.role === 'agent2') {
+            toast.success(`Lead reassigned from ${data.previousAgent} to ${data.newAgent} by ${data.reassignedBy}`);
+          }
+          // Trigger refresh of leads list
+          window.dispatchEvent(new CustomEvent('refreshLeads'));
+        } catch (error) {
+          console.error('Error handling leadReassigned event:', error);
+        }
+      });
+
       socket.current.on('leadDeleted', (data) => {
         try {
           // Only show toast for non-admin/non-superadmin users to avoid conflicts

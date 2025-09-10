@@ -14,12 +14,14 @@ import {
   Edit3,
   Save,
   X,
-  Download
+  Download,
+  UserCheck
 } from 'lucide-react';
 import axios from '../utils/axios';
 import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/LoadingSpinner';
 import AgentManagement from '../components/AgentManagement';
+import LeadReassignModal from '../components/LeadReassignModal';
 import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import { 
@@ -70,6 +72,11 @@ const AdminDashboard = () => {
   // Lead update modal states - REMOVED (Admin is now read-only)
   const [selectedLead, setSelectedLead] = useState(null);
   const [showViewModal, setShowViewModal] = useState(false);
+  
+  // Lead reassignment modal states
+  const [showReassignModal, setShowReassignModal] = useState(false);
+  const [leadToReassign, setLeadToReassign] = useState(null);
+  
   const maskEmail = (email) => {
     if (!email) return '—';
     const [username, domain] = email.split('@');
@@ -373,6 +380,36 @@ const AdminDashboard = () => {
     setIsUpdating(false);
   };
 
+  // Reassignment modal functions
+  const openReassignModal = (lead) => {
+    setLeadToReassign(lead);
+    setShowReassignModal(true);
+  };
+
+  const closeReassignModal = () => {
+    setShowReassignModal(false);
+    setLeadToReassign(null);
+  };
+
+  const handleLeadReassigned = (updatedLead) => {
+    // Update the lead in the leads array
+    setLeads(prevLeads => 
+      prevLeads.map(lead => 
+        lead._id === updatedLead._id ? updatedLead : lead
+      )
+    );
+    
+    // Update search results if they exist
+    setSearchResults(prevResults => 
+      prevResults.map(lead => 
+        lead._id === updatedLead._id ? updatedLead : lead
+      )
+    );
+    
+    // Close modal
+    closeReassignModal();
+  };
+
   // Check if user is from REDDINGTON GLOBAL CONSULTANCY
   const isReddingtonAdmin = () => {
     console.log('User object:', user);
@@ -382,7 +419,7 @@ const AdminDashboard = () => {
     
     // Check by organization name first, then by ID as fallback
     const isReddingtonByName = user?.organization?.name === 'REDDINGTON GLOBAL CONSULTANCY';
-    const isReddingtonById = user?.organization === '68b9c76d2c29dac1220cb81c' || user?.organization?._id === '68b9c76d2c29dac1220cb81c';
+    const isReddingtonById = user?.organization === '68c17bf5d8a7b0aa548feee3' || user?.organization?._id === '68c17bf5d8a7b0aa548feee3';
     
     const isReddington = isReddingtonByName || isReddingtonById;
     console.log('Is Reddington admin (by name):', isReddingtonByName);
@@ -1093,19 +1130,33 @@ const AdminDashboard = () => {
 
                       {/* Actions - 1 column */}
                       <div className="col-span-1">
-                        <button
-                          onClick={() => openViewModal(lead)}
-                          className="w-full text-primary-600 hover:text-primary-900 bg-primary-50 hover:bg-primary-100 px-2 py-1 rounded text-xs transition-colors duration-200 flex items-center justify-center gap-1"
-                        >
-                          {isReddingtonAdmin() ? (
-                            <>
-                              <Edit3 className="h-3 w-3" />
-                              Edit
-                            </>
-                          ) : (
-                            'View'
+                        <div className="flex flex-col space-y-1">
+                          <button
+                            onClick={() => openViewModal(lead)}
+                            className="w-full text-primary-600 hover:text-primary-900 bg-primary-50 hover:bg-primary-100 px-2 py-1 rounded text-xs transition-colors duration-200 flex items-center justify-center gap-1"
+                          >
+                            {isReddingtonAdmin() ? (
+                              <>
+                                <Edit3 className="h-3 w-3" />
+                                Edit
+                              </>
+                            ) : (
+                              'View'
+                            )}
+                          </button>
+                          
+                          {/* Reassign button - Only for REDDINGTON GLOBAL CONSULTANCY admins */}
+                          {isReddingtonAdmin() && (
+                            <button
+                              onClick={() => openReassignModal(lead)}
+                              className="w-full text-blue-600 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded text-xs transition-colors duration-200 flex items-center justify-center gap-1"
+                              title="Reassign lead to Agent 2"
+                            >
+                              <UserCheck className="h-3 w-3" />
+                              Reassign
+                            </button>
                           )}
-                        </button>
+                        </div>
                       </div>
                     </div>
 
@@ -1775,6 +1826,14 @@ const AdminDashboard = () => {
           </div>
         </div>
       )}
+
+      {/* Lead Reassignment Modal */}
+      <LeadReassignModal
+        isOpen={showReassignModal}
+        onClose={closeReassignModal}
+        lead={leadToReassign}
+        onLeadReassigned={handleLeadReassigned}
+      />
 
       {/* Agent Management Section */}
       <AgentManagement />
