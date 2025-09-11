@@ -179,7 +179,7 @@ const leadSchema = new mongoose.Schema({
   // Agent 2 Status Fields
   leadStatus: {
     type: String,
-    enum: ['Warm Transfer – Pre-Qualified', 'Cold Transfer – Unqualified', 'From Internal Dept.', 'Test / Training Call']
+    enum: ['Warm Transfer – Pre-Qualified', 'Cold Transfer – Disqualified', 'From Internal Dept.', 'Test / Training Call']
   },
   contactStatus: {
     type: String,
@@ -226,7 +226,7 @@ const leadSchema = new mongoose.Schema({
   // Lead Qualification Status (for admin filtering)
   qualificationStatus: {
     type: String,
-    enum: ['qualified', 'unqualified', 'pending'],
+    enum: ['qualified', 'disqualified', 'pending'],
     default: 'pending'
   },
   
@@ -505,8 +505,8 @@ leadSchema.statics.getStatistics = async function() {
         qualifiedLeads: {
           $sum: { $cond: [{ $eq: ['$qualificationStatus', 'qualified'] }, 1, 0] }
         },
-        unqualifiedLeads: {
-          $sum: { $cond: [{ $eq: ['$qualificationStatus', 'unqualified'] }, 1, 0] }
+        disqualifiedLeads: {
+          $sum: { $cond: [{ $in: ['$qualificationStatus', ['disqualified', 'unqualified']] }, 1, 0] }
         },
         pendingLeads: {
           $sum: { $cond: [{ $eq: ['$qualificationStatus', 'pending'] }, 1, 0] }
@@ -524,7 +524,7 @@ leadSchema.statics.getStatistics = async function() {
     successfulLeads: 0,
     followUpLeads: 0,
     qualifiedLeads: 0,
-    unqualifiedLeads: 0,
+    disqualifiedLeads: 0,
     pendingLeads: 0
   };
 

@@ -21,6 +21,7 @@ import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/LoadingSpinner';
 import OrganizationManagement from './OrganizationManagement';
 import SuperAdminUserManagement from '../components/SuperAdminUserManagement';
+import Pagination from '../components/Pagination';
 import { formatEasternTimeForDisplay, formatEasternTime, getEasternNow } from '../utils/dateUtils';
 
 const SuperAdminDashboard = () => {
@@ -36,6 +37,14 @@ const SuperAdminDashboard = () => {
   const [showEditLeadModal, setShowEditLeadModal] = useState(false);
   const [selectedLead, setSelectedLead] = useState(null);
   const [submitting, setSubmitting] = useState(false);
+  
+  // Pagination state for leads
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 100,
+    total: 0,
+    pages: 0
+  });
   
   // Lead tracking filters
   const [leadFilters, setLeadFilters] = useState({
@@ -204,10 +213,14 @@ const SuperAdminDashboard = () => {
   };
 
   // Lead tracking functions
-  const fetchLeads = useCallback(async () => {
+  const fetchLeads = useCallback(async (page = pagination.page) => {
     try {
       setLeadsLoading(true);
       const params = new URLSearchParams();
+      
+      // Add pagination parameters
+      params.append('page', page.toString());
+      params.append('limit', pagination.limit.toString());
       
       // Add filters to params
       if (leadFilters.search) params.append('search', leadFilters.search);
@@ -222,13 +235,61 @@ const SuperAdminDashboard = () => {
       if (leadFilters.organization) params.append('organization', leadFilters.organization);
 
       const response = await axios.get(`/api/leads?${params.toString()}`);
-      setLeads(response.data?.data?.leads || []);
+      const responseData = response.data?.data;
+      const leadsData = responseData?.leads;
+      const paginationData = responseData?.pagination;
+      
+      setLeads(leadsData || []);
+      
+      // Update pagination state if we have pagination data
+      if (paginationData) {
+        setPagination({
+          page: paginationData.page,
+          limit: paginationData.limit,
+          total: paginationData.total,
+          pages: paginationData.pages
+        });
+      }
     } catch (error) {
       console.error('Error fetching leads:', error);
       toast.error('Failed to load leads');
       setLeads([]);
     } finally {
       setLeadsLoading(false);
+    }
+  }, [
+    pagination.page,
+    pagination.limit,
+    leadFilters.search,
+    leadFilters.leadId,
+    leadFilters.startDate,
+    leadFilters.endDate,
+    leadFilters.status,
+    leadFilters.category,
+    leadFilters.qualificationStatus,
+    leadFilters.assignedTo,
+    leadFilters.duplicateStatus,
+    leadFilters.organization
+  ]);
+
+  // Pagination handler for leads
+  const handlePageChange = async (newPage) => {
+    if (newPage >= 1 && newPage <= pagination.pages) {
+      setPagination(prev => ({ ...prev, page: newPage }));
+      await fetchLeads(newPage);
+    }
+  };
+
+  // Reset pagination when filters change
+  const resetPaginationAndFetchLeads = useCallback(() => {
+    setPagination(prev => ({ ...prev, page: 1 }));
+    fetchLeads(1);
+  }, [fetchLeads]);
+
+  // Reset pagination when lead filters change
+  useEffect(() => {
+    if (activeTab === 'leads') {
+      resetPaginationAndFetchLeads();
     }
   }, [
     leadFilters.search,
@@ -240,7 +301,9 @@ const SuperAdminDashboard = () => {
     leadFilters.qualificationStatus,
     leadFilters.assignedTo,
     leadFilters.duplicateStatus,
-    leadFilters.organization
+    leadFilters.organization,
+    resetPaginationAndFetchLeads,
+    activeTab
   ]);
 
   const handleCreateLead = async (e) => {
@@ -1012,7 +1075,7 @@ const SuperAdminDashboard = () => {
               >
                 <option value="">All Qualification</option>
                 <option value="qualified">Qualified</option>
-                <option value="unqualified">Unqualified</option>
+                <option value="disqualified">Disqualified</option>
                 <option value="pending">Pending</option>
               </select>
             </div>
@@ -1199,6 +1262,20 @@ const SuperAdminDashboard = () => {
               </table>
             )}
           </div>
+          
+          {/* Pagination for leads */}
+          {pagination.total > 0 && (
+            <div className="mt-6 px-6 pb-6">
+              <Pagination
+                currentPage={pagination.page}
+                totalPages={pagination.pages}
+                totalItems={pagination.total}
+                itemsPerPage={pagination.limit}
+                onPageChange={handlePageChange}
+                className="border-t border-gray-200 pt-4"
+              />
+            </div>
+          )}
         </div>
       )}
 

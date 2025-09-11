@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { 
   Plus, 
@@ -9,6 +9,7 @@ import {
 import axios from '../utils/axios';
 import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/LoadingSpinner';
+import Pagination from '../components/Pagination';
 import { getEasternNow, formatEasternTimeForDisplay, getEasternStartOfDay, getEasternEndOfDay } from '../utils/dateUtils';
 
 const Agent1Dashboard = () => {
@@ -26,6 +27,14 @@ const Agent1Dashboard = () => {
     assignmentNotes: ''
   });
   const [submitting, setSubmitting] = useState(false);
+
+  // Pagination state
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 100,
+    total: 0,
+    pages: 0
+  });
   
   // Error state for form validation
   const [formErrors, setFormErrors] = useState({
@@ -96,30 +105,32 @@ const Agent1Dashboard = () => {
     zipcode: '',
     notes: ''
   });
-  useEffect(() => {
-    fetchLeads();
-    
-    // Listen for real-time updates
-    const handleRefresh = () => fetchLeads();
-    window.addEventListener('refreshLeads', handleRefresh);
-    
-    return () => {
-      window.removeEventListener('refreshLeads', handleRefresh);
-    };
-  }, []);
 
-  const fetchLeads = async () => {
+  const fetchLeads = useCallback(async (page = 1) => {
     try {
       // Add cache-busting parameter to force fresh data
       const timestamp = new Date().getTime();
-      const response = await axios.get(`/api/leads?page=1&limit=10&_t=${timestamp}`);
+      const response = await axios.get(`/api/leads?page=${page}&limit=${pagination.limit}&_t=${timestamp}`);
       console.log('Fetch leads response:', response.data);
-      const leadsData = response.data?.data?.leads;
+      const responseData = response.data?.data;
+      const leadsData = responseData?.leads;
+      const paginationData = responseData?.pagination;
+      
       const validLeads = Array.isArray(leadsData) ? leadsData : [];
       console.log('Valid leads found:', validLeads.length, validLeads);
       setLeads(validLeads);
       
-      // Calculate stats
+      // Update pagination state if we have pagination data
+      if (paginationData) {
+        setPagination({
+          page: paginationData.page,
+          limit: paginationData.limit,
+          total: paginationData.total,
+          pages: paginationData.pages
+        });
+      }
+      
+      // Calculate stats from current page
       const total = validLeads.length;
       const hot = validLeads.filter(lead => lead.category === 'hot').length;
       const warm = validLeads.filter(lead => lead.category === 'warm').length;
@@ -133,6 +144,26 @@ const Agent1Dashboard = () => {
       setLeads([]);
     } finally {
       setLoading(false);
+    }
+  }, [pagination.limit]);
+
+  useEffect(() => {
+    fetchLeads(pagination.page);
+    
+    // Listen for real-time updates
+    const handleRefresh = () => fetchLeads(pagination.page);
+    window.addEventListener('refreshLeads', handleRefresh);
+    
+    return () => {
+      window.removeEventListener('refreshLeads', handleRefresh);
+    };
+  }, [fetchLeads, pagination.page]);
+
+  // Pagination handlers
+  const handlePageChange = async (newPage) => {
+    if (newPage >= 1 && newPage <= pagination.pages) {
+      setPagination(prev => ({ ...prev, page: newPage }));
+      await fetchLeads(newPage);
     }
   };
 
@@ -465,7 +496,7 @@ const Agent1Dashboard = () => {
       
       setShowForm(false);
 
-      fetchLeads();
+      fetchLeads(pagination.page);
     } catch (error) {
       console.error('Error creating lead:', error);
       console.error('Error response:', error.response);
@@ -617,7 +648,7 @@ const Agent1Dashboard = () => {
       setShowEditModal(false);
       setEditingLead(null);
 
-      fetchLeads();
+      fetchLeads(pagination.page);
     } catch (error) {
       console.error('Error updating lead:', error);
       console.error('Error response:', error.response);
@@ -697,7 +728,7 @@ const Agent1Dashboard = () => {
       setAssignmentData({ assignedTo: '', assignmentNotes: '' });
       
       // Refresh leads to show updated assignment status
-      await fetchLeads();
+      await fetchLeads(pagination.page);
     } catch (error) {
       console.error('Error assigning lead:', error);
       toast.error(error.response?.data?.message || 'Failed to assign lead');
@@ -714,7 +745,7 @@ const Agent1Dashboard = () => {
     try {
       await axios.post(`/api/leads/${leadId}/unassign`);
       toast.success('Lead unassigned successfully!');
-      await fetchLeads();
+      await fetchLeads(pagination.page);
     } catch (error) {
       console.error('Error unassigning lead:', error);
       toast.error(error.response?.data?.message || 'Failed to unassign lead');
@@ -1031,6 +1062,20 @@ const Agent1Dashboard = () => {
             </tbody>
           </table>
         </div>
+        
+        {/* Pagination */}
+        {pagination.total > 0 && (
+          <div className="mt-6 px-6 pb-6">
+            <Pagination
+              currentPage={pagination.page}
+              totalPages={pagination.pages}
+              totalItems={pagination.total}
+              itemsPerPage={pagination.limit}
+              onPageChange={handlePageChange}
+              className="border-t border-gray-200 pt-4"
+            />
+          </div>
+        )}
       </div>
 
       {/* Add Lead Modal - Modern Redesigned */}

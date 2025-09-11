@@ -229,7 +229,7 @@ const updateLeadValidation = [
     .withMessage('Invalid status'),
   body('leadStatus')
     .optional({ nullable: true, checkFalsy: true })
-    .isIn(['Warm Transfer – Pre-Qualified', 'Cold Transfer – Unqualified', 'From Internal Dept.', 'Test / Training Call'])
+    .isIn(['Warm Transfer – Pre-Qualified', 'Cold Transfer – Disqualified', 'From Internal Dept.', 'Test / Training Call'])
     .withMessage('Invalid lead status'),
   body('contactStatus')
     .optional({ nullable: true, checkFalsy: true })
@@ -374,7 +374,7 @@ router.get('/export', [
     .withMessage('Invalid category filter'),
   query('qualificationStatus')
     .optional()
-    .isIn(['qualified', 'unqualified', 'pending'])
+    .isIn(['qualified', 'disqualified', 'pending'])
     .withMessage('Invalid qualification status filter'),
   query('duplicateStatus')
     .optional()
@@ -487,7 +487,12 @@ router.get('/export', [
     }
 
     if (qualificationStatus) {
-      filter.qualificationStatus = qualificationStatus;
+      // Handle backward compatibility: 'disqualified' filter should include both 'disqualified' and 'unqualified'
+      if (qualificationStatus === 'disqualified') {
+        filter.qualificationStatus = { $in: ['disqualified', 'unqualified'] };
+      } else {
+        filter.qualificationStatus = qualificationStatus;
+      }
     }
 
     if (organization) {
@@ -744,8 +749,8 @@ router.get('/', protect, [
     .withMessage('Page must be a positive integer'),
   query('limit')
     .optional()
-    .isInt({ min: 1, max: 100 })
-    .withMessage('Limit must be between 1 and 100'),
+    .isInt({ min: 1, max: 1000 })
+    .withMessage('Limit must be between 1 and 1000'),
   query('status')
     .optional()
     .isIn(['new', 'interested', 'not-interested', 'successful', 'follow-up'])
@@ -756,7 +761,7 @@ router.get('/', protect, [
     .withMessage('Invalid category filter'),
   query('qualificationStatus')
     .optional()
-    .isIn(['qualified', 'unqualified', 'pending'])
+    .isIn(['qualified', 'disqualified', 'pending'])
     .withMessage('Invalid qualification status filter'),
   query('duplicateStatus')
     .optional()
@@ -786,7 +791,7 @@ router.get('/', protect, [
 ], handleValidationErrors, async (req, res) => {
   try {
     const page = parseInt(req.query.page) || 1;
-    const limit = parseInt(req.query.limit) || 10;
+    const limit = parseInt(req.query.limit) || 100;
     const skip = (page - 1) * limit;
 
     // Build filter object
@@ -801,7 +806,12 @@ router.get('/', protect, [
     }
 
     if (req.query.qualificationStatus) {
-      filter.qualificationStatus = req.query.qualificationStatus;
+      // Handle backward compatibility: 'disqualified' filter should include both 'disqualified' and 'unqualified'
+      if (req.query.qualificationStatus === 'disqualified') {
+        filter.qualificationStatus = { $in: ['disqualified', 'unqualified'] };
+      } else {
+        filter.qualificationStatus = req.query.qualificationStatus;
+      }
     }
 
     // Duplicate status filter

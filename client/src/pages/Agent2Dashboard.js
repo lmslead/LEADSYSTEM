@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSocket } from '../contexts/SocketContext';
 import { 
@@ -12,6 +12,7 @@ import {
 import axios from '../utils/axios';
 import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/LoadingSpinner';
+import Pagination from '../components/Pagination';
 import { formatEasternTimeForDisplay, getEasternNow, getEasternStartOfDay, getEasternEndOfDay } from '../utils/dateUtils';
 
 // Unified Lead Progress Status options for Agent 2
@@ -74,6 +75,14 @@ const Agent2Dashboard = () => {
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [updating, setUpdating] = useState(false);
+
+  // Pagination state
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 100,
+    total: 0,
+    pages: 0
+  });
 
   // Form data for comprehensive lead editing
   const [editFormData, setEditFormData] = useState({
@@ -150,10 +159,10 @@ const Agent2Dashboard = () => {
   });
 
   useEffect(() => {
-    fetchLeads();
+    fetchLeads(pagination.page);
     
     // Listen for real-time updates
-    const handleRefresh = () => fetchLeads();
+    const handleRefresh = () => fetchLeads(pagination.page);
     window.addEventListener('refreshLeads', handleRefresh);
 
     // Socket.IO event listeners for real-time updates
@@ -164,7 +173,7 @@ const Agent2Dashboard = () => {
           duration: 2000,
           icon: '🔄'
         });
-        fetchLeads(); // Refresh the leads list
+        fetchLeads(pagination.page); // Refresh the leads list
       };
 
       const handleLeadCreated = (data) => {
@@ -173,7 +182,7 @@ const Agent2Dashboard = () => {
           duration: 2000,
           icon: '✅'
         });
-        fetchLeads(); // Refresh the leads list
+        fetchLeads(pagination.page); // Refresh the leads list
       };
 
       socket.on('leadUpdated', handleLeadUpdated);
@@ -193,11 +202,11 @@ const Agent2Dashboard = () => {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters, dateFilter, socket]);
 
-  const fetchLeads = async () => {
+  const fetchLeads = useCallback(async (page = 1) => {
     try {
       const params = new URLSearchParams();
-      params.append('page', '1');
-      params.append('limit', '50');
+      params.append('page', page.toString());
+      params.append('limit', pagination.limit.toString());
       
       if (filters.status) params.append('status', filters.status);
       if (filters.category) params.append('category', filters.category);
@@ -215,8 +224,21 @@ const Agent2Dashboard = () => {
       }
 
       const response = await axios.get(`/api/leads?${params.toString()}`);
-      const leadsData = response.data?.data?.leads;
+      const responseData = response.data?.data;
+      const leadsData = responseData?.leads;
+      const paginationData = responseData?.pagination;
+      
       setLeads(Array.isArray(leadsData) ? leadsData : []);
+      
+      // Update pagination state if we have pagination data
+      if (paginationData) {
+        setPagination({
+          page: paginationData.page,
+          limit: paginationData.limit,
+          total: paginationData.total,
+          pages: paginationData.pages
+        });
+      }
     } catch (error) {
       console.error('Error fetching leads:', error);
       toast.error('Failed to fetch leads');
@@ -224,7 +246,26 @@ const Agent2Dashboard = () => {
     } finally {
       setLoading(false);
     }
+  }, [pagination.limit, filters, dateFilter]);
+
+  // Pagination handler
+  const handlePageChange = async (newPage) => {
+    if (newPage >= 1 && newPage <= pagination.pages) {
+      setPagination(prev => ({ ...prev, page: newPage }));
+      await fetchLeads(newPage);
+    }
   };
+
+  // Reset pagination when filters change
+  const resetPaginationAndFetch = useCallback(() => {
+    setPagination(prev => ({ ...prev, page: 1 }));
+    fetchLeads(1);
+  }, [fetchLeads]);
+
+  // Reset pagination when filters change
+  useEffect(() => {
+    resetPaginationAndFetch();
+  }, [filters, dateFilter, resetPaginationAndFetch]);
 
   const handleUpdateLead = async (e) => {
     e.preventDefault();
@@ -284,7 +325,7 @@ const Agent2Dashboard = () => {
       toast.success('Lead updated successfully!');
       
       // Refresh leads data first
-      await fetchLeads();
+      await fetchLeads(pagination.page);
       
       // Update the selected lead with new data to show immediately in view modal
       const updatedLead = { ...selectedLead, ...cleanUpdateData };
@@ -498,7 +539,7 @@ const Agent2Dashboard = () => {
       toast.success('Lead details updated successfully!');
       
       // Refresh leads data
-      await fetchLeads();
+      await fetchLeads(pagination.page);
       
       // Close modal
       setShowEditModal(false);
@@ -803,7 +844,7 @@ const Agent2Dashboard = () => {
             >
               <option value="">All Qualification</option>
               <option value="qualified">Qualified</option>
-              <option value="unqualified">Disqualified</option>
+              <option value="disqualified">Disqualified</option>
               <option value="pending">Not Interested</option>
             </select>
           </div>
@@ -979,11 +1020,11 @@ const Agent2Dashboard = () => {
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
                       lead.qualificationStatus === 'qualified' ? 'bg-green-100 text-green-800' :
-                      lead.qualificationStatus === 'unqualified' ? 'bg-red-100 text-red-800' :
+                      lead.qualificationStatus === 'disqualified' ? 'bg-red-100 text-red-800' :
                       'bg-yellow-100 text-yellow-800'
                     }`}>
                       {lead.qualificationStatus === 'qualified' ? '✅ Qualified' :
-                       lead.qualificationStatus === 'unqualified' ? '❌ Disqualified' :
+                       lead.qualificationStatus === 'disqualified' ? '❌ Disqualified' :
                        '⏳ Pending'}
                     </span>
                   </td>
@@ -1027,6 +1068,20 @@ const Agent2Dashboard = () => {
             </tbody>
           </table>
         </div>
+        
+        {/* Pagination */}
+        {pagination.total > 0 && (
+          <div className="mt-6 px-6 pb-6">
+            <Pagination
+              currentPage={pagination.page}
+              totalPages={pagination.pages}
+              totalItems={pagination.total}
+              itemsPerPage={pagination.limit}
+              onPageChange={handlePageChange}
+              className="border-t border-gray-200 pt-4"
+            />
+          </div>
+        )}
       </div>
 
       {/* View Lead Details Modal */}
@@ -1356,7 +1411,7 @@ const Agent2Dashboard = () => {
                 </button>
                 <button
                   onClick={async () => {
-                    await fetchLeads();
+                    await fetchLeads(pagination.page);
                     // Find and update the selected lead with fresh data
                     const updatedLeads = await axios.get(`/api/leads`);
                     const freshLead = updatedLeads.data?.data?.leads?.find(l => (l.leadId || l._id) === (selectedLead.leadId || selectedLead._id));
@@ -1414,11 +1469,11 @@ const Agent2Dashboard = () => {
                             <span className="font-medium text-gray-700">Qualification:</span>{' '}
                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                               selectedLead.qualificationStatus === 'qualified' ? 'bg-green-100 text-green-800' :
-                              selectedLead.qualificationStatus === 'unqualified' ? 'bg-red-100 text-red-800' :
+                              selectedLead.qualificationStatus === 'disqualified' ? 'bg-red-100 text-red-800' :
                               'bg-yellow-100 text-yellow-800'
                             }`}>
                               {selectedLead.qualificationStatus === 'qualified' ? 'Qualified' :
-                               selectedLead.qualificationStatus === 'unqualified' ? 'Disqualified' :
+                               selectedLead.qualificationStatus === 'disqualified' ? 'Disqualified' :
                                'Pending'}
                             </span>
                           </div>
@@ -1471,7 +1526,7 @@ const Agent2Dashboard = () => {
                       >
                         <option value="">Select Qualification Status</option>
                         <option value="qualified">Qualified</option>
-                        <option value="unqualified">Disqualified</option>
+                        <option value="disqualified">Disqualified</option>
                         <option value="pending">Not Interested</option>
                       </select>
                     </div>

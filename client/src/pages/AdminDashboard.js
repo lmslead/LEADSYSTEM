@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { 
   BarChart3, 
   TrendingUp, 
@@ -22,6 +22,7 @@ import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/LoadingSpinner';
 import AgentManagement from '../components/AgentManagement';
 import LeadReassignModal from '../components/LeadReassignModal';
+import Pagination from '../components/Pagination';
 import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
 import { 
@@ -29,8 +30,7 @@ import {
   getEasternNow, 
   getEasternStartOfDay,
   getEasternEndOfDay,
-  toEasternTime,
-  toEasternDateInputValue 
+  toEasternTime 
 } from '../utils/dateUtils';
 
 const AdminDashboard = () => {
@@ -42,6 +42,14 @@ const AdminDashboard = () => {
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(getEasternNow());
   const [showLeadsSection, setShowLeadsSection] = useState(false);
+  
+  // Pagination state
+  const [pagination, setPagination] = useState({
+    page: 1,
+    limit: 100,
+    total: 0,
+    pages: 0
+  });
 
   // Search functionality
   const [searchTerm, setSearchTerm] = useState('');
@@ -60,7 +68,7 @@ const AdminDashboard = () => {
   });
 
   // Add qualification status filter
-  const [qualificationFilter, setQualificationFilter] = useState('all'); // 'all', 'qualified', 'unqualified', 'pending'
+  const [qualificationFilter, setQualificationFilter] = useState('all'); // 'all', 'qualified', 'disqualified', 'pending'
   
   // Add duplicate status filter
   const [duplicateFilter, setDuplicateFilter] = useState('all'); // 'all', 'duplicates', 'non-duplicates'
@@ -141,6 +149,7 @@ const AdminDashboard = () => {
       startDate,
       endDate
     });
+    resetPaginationAndFetch();
   };
 
   useEffect(() => {
@@ -251,11 +260,11 @@ const AdminDashboard = () => {
     }
   };
 
-  const fetchLeads = async (silent = false) => {
+  const fetchLeads = useCallback(async (silent = false, page = pagination.page) => {
     try {
       console.log('Admin Dashboard: Fetching leads...');
       const timestamp = new Date().getTime();
-      let url = `/api/leads?page=1&limit=50&_t=${timestamp}`;
+      let url = `/api/leads?page=${page}&limit=${pagination.limit}&_t=${timestamp}`;
       
       // Add qualification filter if selected
       if (qualificationFilter && qualificationFilter !== 'all') {
@@ -281,8 +290,21 @@ const AdminDashboard = () => {
       }
       
       const response = await axios.get(url);
-      const leadsData = response.data?.data?.leads;
+      const responseData = response.data?.data;
+      const leadsData = responseData?.leads;
+      const paginationData = responseData?.pagination;
+      
       setLeads(Array.isArray(leadsData) ? leadsData : []);
+      
+      // Update pagination state if we have pagination data
+      if (paginationData) {
+        setPagination({
+          page: paginationData.page,
+          limit: paginationData.limit,
+          total: paginationData.total,
+          pages: paginationData.pages
+        });
+      }
     } catch (error) {
       console.error('Error fetching leads:', error);
       if (!silent) {
@@ -290,7 +312,21 @@ const AdminDashboard = () => {
       }
       setLeads([]);
     }
+  }, [pagination.page, pagination.limit, qualificationFilter, duplicateFilter, organizationFilter, dateFilter]);
+
+  // Pagination handler
+  const handlePageChange = async (newPage) => {
+    if (newPage >= 1 && newPage <= pagination.pages) {
+      setPagination(prev => ({ ...prev, page: newPage }));
+      await fetchLeads(false, newPage);
+    }
   };
+
+  // Reset pagination when filters change
+  const resetPaginationAndFetch = useCallback(() => {
+    setPagination(prev => ({ ...prev, page: 1 }));
+    fetchLeads(false, 1);
+  }, [fetchLeads]);
 
   const fetchOrganizations = async () => {
     try {
@@ -429,7 +465,7 @@ const AdminDashboard = () => {
   };
 
   // Search functionality
-  const handleSearch = (term) => {
+  const handleSearch = useCallback((term) => {
     setSearchTerm(term);
     if (!term.trim()) {
       setSearchResults([]);
@@ -448,7 +484,7 @@ const AdminDashboard = () => {
       );
     });
     setSearchResults(filtered);
-  };
+  }, [leads]);
 
   // Lead update functionality
   const handleEditToggle = () => {
@@ -589,13 +625,13 @@ const AdminDashboard = () => {
   const getQualificationBadge = (qualificationStatus) => {
     const badges = {
       qualified: 'bg-green-100 text-green-800 border-green-200',
-      unqualified: 'bg-red-100 text-red-800 border-red-200',
+      disqualified: 'bg-red-100 text-red-800 border-red-200',
       pending: 'bg-yellow-100 text-yellow-800 border-yellow-200'
     };
 
     const icons = {
       qualified: CheckCircle,
-      unqualified: XCircle,
+      disqualified: XCircle,
       pending: Clock
     };
 
@@ -700,8 +736,8 @@ const AdminDashboard = () => {
               <XCircle className="h-7 w-7 text-red-600" />
             </div>
             <div>
-              <p className="text-sm font-medium text-gray-600">Unqualified</p>
-              <p className="text-3xl font-bold text-gray-900">{stats.unqualifiedLeads || 0}</p>
+              <p className="text-sm font-medium text-gray-600">Disqualified</p>
+              <p className="text-3xl font-bold text-gray-900">{stats.disqualifiedLeads || 0}</p>
             </div>
           </div>
 
@@ -858,7 +894,10 @@ const AdminDashboard = () => {
               <span className="text-sm font-medium text-gray-700">Qualification:</span>
               <div className="flex gap-1">
                 <button
-                  onClick={() => setQualificationFilter('all')}
+                  onClick={() => {
+                    setQualificationFilter('all');
+                    resetPaginationAndFetch();
+                  }}
                   className={`px-2 py-1 text-xs rounded transition-colors ${
                     qualificationFilter === 'all' 
                       ? 'bg-primary-600 text-white' 
@@ -868,7 +907,10 @@ const AdminDashboard = () => {
                   All
                 </button>
                 <button
-                  onClick={() => setQualificationFilter('qualified')}
+                  onClick={() => {
+                    setQualificationFilter('qualified');
+                    resetPaginationAndFetch();
+                  }}
                   className={`px-2 py-1 text-xs rounded transition-colors ${
                     qualificationFilter === 'qualified' 
                       ? 'bg-green-600 text-white' 
@@ -878,17 +920,23 @@ const AdminDashboard = () => {
                   Qualified
                 </button>
                 <button
-                  onClick={() => setQualificationFilter('unqualified')}
+                  onClick={() => {
+                    setQualificationFilter('disqualified');
+                    resetPaginationAndFetch();
+                  }}
                   className={`px-2 py-1 text-xs rounded transition-colors ${
-                    qualificationFilter === 'unqualified' 
+                    qualificationFilter === 'disqualified' 
                       ? 'bg-red-600 text-white' 
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                 >
-                  Unqualified
+                  Disqualified
                 </button>
                 <button
-                  onClick={() => setQualificationFilter('pending')}
+                  onClick={() => {
+                    setQualificationFilter('pending');
+                    resetPaginationAndFetch();
+                  }}
                   className={`px-2 py-1 text-xs rounded transition-colors ${
                     qualificationFilter === 'pending' 
                       ? 'bg-yellow-600 text-white' 
@@ -905,7 +953,10 @@ const AdminDashboard = () => {
               <span className="text-sm font-medium text-gray-700">Duplicates:</span>
               <div className="flex gap-1">
                 <button
-                  onClick={() => setDuplicateFilter('all')}
+                  onClick={() => {
+                    setDuplicateFilter('all');
+                    resetPaginationAndFetch();
+                  }}
                   className={`px-2 py-1 text-xs rounded transition-colors ${
                     duplicateFilter === 'all' 
                       ? 'bg-primary-600 text-white' 
@@ -915,7 +966,10 @@ const AdminDashboard = () => {
                   All
                 </button>
                 <button
-                  onClick={() => setDuplicateFilter('duplicates')}
+                  onClick={() => {
+                    setDuplicateFilter('duplicates');
+                    resetPaginationAndFetch();
+                  }}
                   className={`px-2 py-1 text-xs rounded transition-colors ${
                     duplicateFilter === 'duplicates' 
                       ? 'bg-yellow-600 text-white' 
@@ -925,7 +979,10 @@ const AdminDashboard = () => {
                   Dups Only
                 </button>
                 <button
-                  onClick={() => setDuplicateFilter('non-duplicates')}
+                  onClick={() => {
+                    setDuplicateFilter('non-duplicates');
+                    resetPaginationAndFetch();
+                  }}
                   className={`px-2 py-1 text-xs rounded transition-colors ${
                     duplicateFilter === 'non-duplicates' 
                       ? 'bg-green-600 text-white' 
@@ -942,7 +999,10 @@ const AdminDashboard = () => {
               <span className="text-sm font-medium text-gray-700">Org:</span>
               <div className="flex gap-1 max-w-md overflow-x-auto">
                 <button
-                  onClick={() => setOrganizationFilter('all')}
+                  onClick={() => {
+                    setOrganizationFilter('all');
+                    resetPaginationAndFetch();
+                  }}
                   className={`px-2 py-1 text-xs rounded whitespace-nowrap transition-colors ${
                     organizationFilter === 'all' 
                       ? 'bg-primary-600 text-white' 
@@ -954,7 +1014,10 @@ const AdminDashboard = () => {
                 {organizations.slice(0, 3).map((org) => (
                   <button
                     key={org._id}
-                    onClick={() => setOrganizationFilter(org._id)}
+                    onClick={() => {
+                      setOrganizationFilter(org._id);
+                      resetPaginationAndFetch();
+                    }}
                     className={`px-2 py-1 text-xs rounded whitespace-nowrap transition-colors ${
                       organizationFilter === org._id 
                         ? 'bg-blue-600 text-white' 
@@ -968,7 +1031,10 @@ const AdminDashboard = () => {
                 {organizations.length > 3 && (
                   <select
                     value={organizationFilter}
-                    onChange={(e) => setOrganizationFilter(e.target.value)}
+                    onChange={(e) => {
+                      setOrganizationFilter(e.target.value);
+                      resetPaginationAndFetch();
+                    }}
                     className="px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-primary-500"
                   >
                     <option value="all">All Orgs</option>
@@ -1201,6 +1267,20 @@ const AdminDashboard = () => {
                 </div>
               )}
             </div>
+            
+            {/* Pagination */}
+            {pagination.total > 0 && (
+              <div className="mt-6 px-6 pb-6">
+                <Pagination
+                  currentPage={pagination.page}
+                  totalPages={pagination.pages}
+                  totalItems={pagination.total}
+                  itemsPerPage={pagination.limit}
+                  onPageChange={handlePageChange}
+                  className="border-t border-gray-200 pt-4"
+                />
+              </div>
+            )}
           </div>
         </div>
       )}
@@ -1571,7 +1651,7 @@ const AdminDashboard = () => {
                             >
                               <option value="">Select Status</option>
                               <option value="qualified">Qualified</option>
-                              <option value="unqualified">Unqualified</option>
+                              <option value="disqualified">Disqualified</option>
                               <option value="pending">Pending</option>
                             </select>
                             <div className="text-xs text-blue-600 italic mt-1">Independent from Lead Progress</div>
