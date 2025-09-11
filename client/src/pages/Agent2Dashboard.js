@@ -22,15 +22,16 @@ const agent2LeadProgressOptions = [
   "Info Provided – Awaiting Decision",
   "Nurture – Not Ready",
   "Qualified – Meets Criteria",
-  "Pre-Qualified – Docs Needed",
   "Disqualified – Debt Too Low",
   "Disqualified – Secured Debt Only",
   "Disqualified – Non-Service State",
   "Disqualified – Active with Competitor",
+  "Disqualified - unacceptable creditors",
   "Callback Needed",
   "Hung Up",
   "Not Interested",
-  "DNC (Do Not Contact)"
+  "DNC (Do Not Contact)",
+  "Others"
 ];
 
 // Debt types by category mapping (same as Agent1)
@@ -142,12 +143,7 @@ const Agent2Dashboard = () => {
     duplicateStatus: ''
   });
 
-  // Date filtering state
-  const [dateFilter, setDateFilter] = useState({
-    startDate: '',
-    endDate: '',
-    filterType: 'all' // 'all', 'today', 'week', 'month', 'custom'
-  });
+
 
   const [updateData, setUpdateData] = useState({
     leadProgressStatus: '',
@@ -158,6 +154,10 @@ const Agent2Dashboard = () => {
     qualificationStatus: ''
   });
 
+  // State for handling "Others" custom disposition
+  const [customDisposition, setCustomDisposition] = useState('');
+  const [showCustomDisposition, setShowCustomDisposition] = useState(false);
+
   useEffect(() => {
     fetchLeads(pagination.page);
     
@@ -165,23 +165,22 @@ const Agent2Dashboard = () => {
     const handleRefresh = () => fetchLeads(pagination.page);
     window.addEventListener('refreshLeads', handleRefresh);
 
-    // Socket.IO event listeners for real-time updates
+    // Auto-refresh every 10 seconds
+    const interval = setInterval(() => {
+      fetchLeads(pagination.page);
+    }, 10000);
+
+    // Socket.IO event listeners for real-time updates (notifications disabled)
     if (socket) {
       const handleLeadUpdated = (data) => {
         console.log('Lead updated via socket in Agent2:', data);
-        toast.success(`Lead updated successfully`, {
-          duration: 2000,
-          icon: '🔄'
-        });
+        // No notification toast for agents
         fetchLeads(pagination.page); // Refresh the leads list
       };
 
       const handleLeadCreated = (data) => {
         console.log('New lead created via socket in Agent2:', data);
-        toast.success(`New lead available`, {
-          duration: 2000,
-          icon: '✅'
-        });
+        // No notification toast for agents
         fetchLeads(pagination.page); // Refresh the leads list
       };
 
@@ -191,6 +190,7 @@ const Agent2Dashboard = () => {
       // Cleanup socket listeners
       return () => {
         window.removeEventListener('refreshLeads', handleRefresh);
+        clearInterval(interval);
         socket.off('leadUpdated', handleLeadUpdated);
         socket.off('leadCreated', handleLeadCreated);
       };
@@ -198,9 +198,10 @@ const Agent2Dashboard = () => {
     
     return () => {
       window.removeEventListener('refreshLeads', handleRefresh);
+      clearInterval(interval);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, dateFilter, socket]);
+  }, [filters, socket]);
 
   const fetchLeads = useCallback(async (page = 1) => {
     try {
@@ -214,14 +215,7 @@ const Agent2Dashboard = () => {
       if (filters.duplicateStatus) params.append('duplicateStatus', filters.duplicateStatus);
       if (filters.qualificationStatus) params.append('qualificationStatus', filters.qualificationStatus);
 
-      // Add date filtering parameters
-      if (dateFilter.filterType && dateFilter.filterType !== 'all') {
-        params.append('dateFilterType', dateFilter.filterType);
-        if (dateFilter.filterType === 'custom' && dateFilter.startDate && dateFilter.endDate) {
-          params.append('startDate', dateFilter.startDate);
-          params.append('endDate', dateFilter.endDate);
-        }
-      }
+      // Agent2 always shows today's leads only - no date filter parameters sent to server
 
       const response = await axios.get(`/api/leads?${params.toString()}`);
       const responseData = response.data?.data;
@@ -246,7 +240,7 @@ const Agent2Dashboard = () => {
     } finally {
       setLoading(false);
     }
-  }, [pagination.limit, filters, dateFilter]);
+  }, [pagination.limit, filters]);
 
   // Pagination handler
   const handlePageChange = async (newPage) => {
@@ -265,22 +259,45 @@ const Agent2Dashboard = () => {
   // Reset pagination when filters change
   useEffect(() => {
     resetPaginationAndFetch();
-  }, [filters, dateFilter, resetPaginationAndFetch]);
+  }, [filters, resetPaginationAndFetch]);
 
   const handleUpdateLead = async (e) => {
     e.preventDefault();
     setUpdating(true);
 
     try {
+      console.log('Form submission - updateData:', updateData);
+      console.log('Form submission - customDisposition:', customDisposition);
+      console.log('Form submission - showCustomDisposition:', showCustomDisposition);
+      
       // Clean the update data to remove empty strings
       const cleanUpdateData = {};
       
       if (updateData.leadProgressStatus && updateData.leadProgressStatus !== '') {
-        cleanUpdateData.leadProgressStatus = updateData.leadProgressStatus;
+        console.log('Processing leadProgressStatus:', updateData.leadProgressStatus);
+        
+        // Handle "Others" option with custom text
+        if (updateData.leadProgressStatus === 'Others') {
+          console.log('Others selected, customDisposition value:', `"${customDisposition}"`);
+          console.log('customDisposition length:', customDisposition?.length);
+          console.log('customDisposition trimmed:', `"${customDisposition?.trim()}"`);
+          
+          if (!customDisposition || customDisposition.trim() === '') {
+            console.log('Validation failed: Custom disposition is empty');
+            toast.error('Please enter a custom disposition when selecting "Others"');
+            setUpdating(false);
+            return;
+          }
+          cleanUpdateData.leadProgressStatus = customDisposition.trim();
+          console.log('Using custom disposition:', customDisposition.trim());
+        } else {
+          cleanUpdateData.leadProgressStatus = updateData.leadProgressStatus;
+          console.log('Using standard disposition:', updateData.leadProgressStatus);
+        }
         // Add metadata for admin tracking
         cleanUpdateData.lastUpdatedBy = user?.name || 'Agent2';
-        cleanUpdateData.lastUpdatedAt = getEasternNow().toISOString();
-        cleanUpdateData.agent2LastAction = updateData.leadProgressStatus;
+        cleanUpdateData.lastUpdatedAt = getEasternNow().toISOString();  
+        cleanUpdateData.agent2LastAction = updateData.leadProgressStatus === 'Others' ? customDisposition.trim() : updateData.leadProgressStatus;
       }
 
       // Add qualification status - independent from leadProgressStatus
@@ -333,7 +350,7 @@ const Agent2Dashboard = () => {
       
       // Close modal after a short delay to ensure data is refreshed
       setTimeout(() => {
-        setShowUpdateModal(false);
+        closeUpdateModal();
         setUpdateData({
           leadProgressStatus: '',
           followUpDate: '',
@@ -553,15 +570,50 @@ const Agent2Dashboard = () => {
 
   const openUpdateModal = (lead) => {
     setSelectedLead(lead);
+    
+    const currentStatus = lead.leadProgressStatus || lead.agent2LastAction || '';
+    
     setUpdateData({
-      leadProgressStatus: lead.leadProgressStatus || lead.agent2LastAction || '',
+      leadProgressStatus: currentStatus,
       followUpDate: lead.followUpDate ? new Date(lead.followUpDate).toISOString().split('T')[0] : '',
       followUpTime: lead.followUpTime || '',
       followUpNotes: lead.followUpNotes || '',
       conversionValue: lead.conversionValue || '',
       qualificationStatus: lead.qualificationStatus || ''
     });
+    
+    // Initialize custom disposition states based on current status
+    if (currentStatus === 'Others') {
+      // If current status is Others, we need to check if there's a custom value
+      // For now, initialize with empty and let user enter new value
+      setCustomDisposition('');
+      setShowCustomDisposition(true);
+    } else if (currentStatus && !agent2LeadProgressOptions.includes(currentStatus)) {
+      // If current status is not in the predefined options, treat it as a custom "Others" value
+      setUpdateData(prev => ({...prev, leadProgressStatus: 'Others'}));
+      setCustomDisposition(currentStatus);
+      setShowCustomDisposition(true);
+    } else {
+      setCustomDisposition('');
+      setShowCustomDisposition(false);
+    }
+    
     setShowUpdateModal(true);
+  };
+
+  const closeUpdateModal = () => {
+    setShowUpdateModal(false);
+    setCustomDisposition('');
+    setShowCustomDisposition(false);
+    setSelectedLead(null);
+    setUpdateData({
+      leadProgressStatus: '',
+      followUpDate: '',
+      followUpTime: '',
+      followUpNotes: '',
+      conversionValue: '',
+      qualificationStatus: ''
+    });
   };
 
   const openViewModal = (lead) => {
@@ -614,62 +666,17 @@ const Agent2Dashboard = () => {
     );
   };
 
-  // Date filtering utility functions
-  const getDateFilteredLeads = (leadsToFilter) => {
-    if (!dateFilter || dateFilter.filterType === 'all') {
-      return leadsToFilter;
-    }
 
-    const now = getEasternNow();
-    let startDate, endDate;
-
-    switch (dateFilter.filterType) {
-      case 'today':
-        startDate = getEasternStartOfDay().toDate();
-        endDate = getEasternEndOfDay().toDate();
-        break;
-      case 'week':
-        startDate = now.clone().subtract(7, 'days').startOf('day').toDate();
-        endDate = getEasternEndOfDay().toDate();
-        break;
-      case 'month':
-        startDate = now.clone().subtract(30, 'days').startOf('day').toDate();
-        endDate = getEasternEndOfDay().toDate();
-        break;
-      case 'custom':
-        if (dateFilter.startDate && dateFilter.endDate) {
-          startDate = new Date(dateFilter.startDate);
-          startDate.setHours(0, 0, 0, 0);
-          endDate = new Date(dateFilter.endDate);
-          endDate.setHours(23, 59, 59, 999);
-        } else {
-          return leadsToFilter;
-        }
-        break;
-      default:
-        return leadsToFilter;
-    }
-
-    return leadsToFilter.filter(lead => {
-      const leadDate = new Date(lead.createdAt);
-      return leadDate >= startDate && leadDate <= endDate;
-    });
-  };
 
   const getLeadStats = () => {
-    // Apply date filtering first
-    let filteredLeads = getDateFilteredLeads(leads);
+    // For Agent2, always show only today's assigned leads
+    const todayStart = getEasternStartOfDay();
+    const todayEnd = getEasternEndOfDay();
     
-    // For Agent2, if no date filter is applied, show only today's assigned leads by default
-    if (dateFilter.filterType === 'all') {
-      const todayStart = getEasternStartOfDay();
-      const todayEnd = getEasternEndOfDay();
-      
-      filteredLeads = leads.filter(lead => {
-        const leadDate = new Date(lead.assignedAt || lead.createdAt);
-        return leadDate >= todayStart && leadDate <= todayEnd;
-      });
-    }
+    const filteredLeads = leads.filter(lead => {
+      const leadDate = new Date(lead.assignedAt || lead.createdAt);
+      return leadDate >= todayStart && leadDate <= todayEnd;
+    });
     
     const total = filteredLeads.length;
     const newLeads = filteredLeads.filter(lead => lead.status === 'new').length;
@@ -721,7 +728,7 @@ const Agent2Dashboard = () => {
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+        {/* <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
           <div className="flex items-center">
             <div className="p-3 rounded-full bg-gray-100">
               <AlertCircle className="h-5 w-5 text-gray-600" />
@@ -767,7 +774,7 @@ const Agent2Dashboard = () => {
               <p className="text-xl font-bold text-gray-900">{stats.followUp}</p>
             </div>
           </div>
-        </div>
+        </div> */}
       </div>
 
       {/* Filters */}
@@ -806,7 +813,7 @@ const Agent2Dashboard = () => {
           </button>
         </div>
 
-        <div className="grid grid-cols-1 md:grid-cols-5 gap-4">
+        <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
             <div className="relative">
@@ -845,22 +852,7 @@ const Agent2Dashboard = () => {
               <option value="">All Qualification</option>
               <option value="qualified">Qualified</option>
               <option value="disqualified">Disqualified</option>
-              <option value="pending">Not Interested</option>
-            </select>
-          </div>
-
-          <div>
-            <label className="block text-sm font-medium text-gray-700 mb-1">Date Filter</label>
-            <select
-              className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-              value={dateFilter.filterType}
-              onChange={(e) => setDateFilter({ ...dateFilter, filterType: e.target.value })}
-            >
-              <option value="all">Today's Leads</option>
-              <option value="today">Today Only</option>
-              <option value="week">Last 7 Days</option>
-              <option value="month">Last 30 Days</option>
-              <option value="custom">Custom Range</option>
+              <option value="pending">Pending</option>
             </select>
           </div>
 
@@ -868,7 +860,6 @@ const Agent2Dashboard = () => {
             <button
               onClick={() => {
                 setFilters({ status: '', category: '', search: '', duplicateStatus: '', qualificationStatus: '' });
-                setDateFilter({ startDate: '', endDate: '', filterType: 'all' });
               }}
               className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors duration-200"
             >
@@ -877,29 +868,7 @@ const Agent2Dashboard = () => {
           </div>
         </div>
 
-        {/* Custom Date Range Inputs */}
-        {dateFilter.filterType === 'custom' && (
-          <div className="mt-4 grid grid-cols-1 md:grid-cols-2 gap-4">
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">Start Date</label>
-              <input
-                type="date"
-                className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                value={dateFilter.startDate}
-                onChange={(e) => setDateFilter({ ...dateFilter, startDate: e.target.value })}
-              />
-            </div>
-            <div>
-              <label className="block text-sm font-medium text-gray-700 mb-1">End Date</label>
-              <input
-                type="date"
-                className="block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                value={dateFilter.endDate}
-                onChange={(e) => setDateFilter({ ...dateFilter, endDate: e.target.value })}
-              />
-            </div>
-          </div>
-        )}
+
       </div>
 
       {/* Leads Table */}
@@ -1443,7 +1412,7 @@ const Agent2Dashboard = () => {
             <div className="fixed inset-0 transition-opacity" aria-hidden="true">
               <div 
                 className="absolute inset-0 bg-gray-500 opacity-75"
-                onClick={() => setShowUpdateModal(false)}
+                onClick={() => closeUpdateModal()}
               ></div>
             </div>
 
@@ -1506,7 +1475,14 @@ const Agent2Dashboard = () => {
                         required
                         className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
                         value={updateData.leadProgressStatus}
-                        onChange={(e) => setUpdateData({ ...updateData, leadProgressStatus: e.target.value })}
+                        onChange={(e) => {
+                          const newValue = e.target.value;
+                          setUpdateData({ ...updateData, leadProgressStatus: newValue });
+                          setShowCustomDisposition(newValue === 'Others');
+                          if (newValue !== 'Others') {
+                            setCustomDisposition('');
+                          }
+                        }}
                       >
                         <option value="">Select Lead Progress Status</option>
                         {agent2LeadProgressOptions.map(option => (
@@ -1514,6 +1490,25 @@ const Agent2Dashboard = () => {
                         ))}
                       </select>
                     </div>
+
+                    {/* Custom Disposition Text Input (show only when Others is selected) */}
+                    {showCustomDisposition && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">
+                          Custom Disposition <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          placeholder="Enter custom disposition..."
+                          className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                          value={customDisposition}
+                          onChange={(e) => setCustomDisposition(e.target.value)}
+                        />
+                        {showCustomDisposition && !customDisposition.trim() && (
+                          <p className="mt-1 text-sm text-red-500">Custom disposition is required when "Others" is selected</p>
+                        )}
+                      </div>
+                    )}
 
                     {/* Qualification Status Dropdown */}
                     <div>
@@ -1527,7 +1522,7 @@ const Agent2Dashboard = () => {
                         <option value="">Select Qualification Status</option>
                         <option value="qualified">Qualified</option>
                         <option value="disqualified">Disqualified</option>
-                        <option value="pending">Not Interested</option>
+                        {/* <option value="pending">Not Interested</option> */}
                       </select>
                     </div>
 
@@ -1599,7 +1594,7 @@ const Agent2Dashboard = () => {
                   <button
                     type="button"
                     className="mt-3 w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:mt-0 sm:ml-3 sm:w-auto sm:text-sm"
-                    onClick={() => setShowUpdateModal(false)}
+                    onClick={() => closeUpdateModal()}
                   >
                     Cancel
                   </button>

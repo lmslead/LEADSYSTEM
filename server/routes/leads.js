@@ -304,22 +304,33 @@ const updateLeadValidation = [
     }),
   body('leadProgressStatus')
     .optional({ nullable: true, checkFalsy: true })
-    .isIn([
-      'Appointment Scheduled',
-      'Immediate Enrollment', 
-      'Info Provided – Awaiting Decision',
-      'Nurture – Not Ready',
-      'Qualified – Meets Criteria',
-      'Pre-Qualified – Docs Needed',
-      'Disqualified – Debt Too Low',
-      'Disqualified – Secured Debt Only',
-      'Disqualified – Non-Service State',
-      'Disqualified – Active with Competitor',
-      'Callback Needed',
-      'Hung Up',
-      'Not Interested',
-      'DNC (Do Not Contact)'
-    ])
+    .custom((value) => {
+      if (!value || value.trim() === '') return true; // Allow empty values
+      
+      const allowedStatuses = [
+        'Appointment Scheduled',
+        'Immediate Enrollment', 
+        'Info Provided – Awaiting Decision',
+        'Nurture – Not Ready',
+        'Qualified – Meets Criteria',
+        'Disqualified – Debt Too Low',
+        'Disqualified – Secured Debt Only',
+        'Disqualified – Non-Service State',
+        'Disqualified – Active with Competitor',
+        'Disqualified - unacceptable creditors',
+        'Callback Needed',
+        'Hung Up',
+        'Not Interested',
+        'DNC (Do Not Contact)'
+      ];
+      
+      // Allow predefined statuses or any custom string (for "Others" option)
+      if (allowedStatuses.includes(value) || typeof value === 'string') {
+        return true;
+      }
+      
+      throw new Error('Lead progress status must be a valid string');
+    })
     .withMessage('Invalid lead progress status'),
   body('agent2LastAction')
     .optional()

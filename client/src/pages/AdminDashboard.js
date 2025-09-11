@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   BarChart3, 
-  TrendingUp, 
+ 
   Users, 
   Calendar,
   Target,
@@ -38,6 +38,7 @@ const AdminDashboard = () => {
   const { user } = useAuth();
   const [stats, setStats] = useState(null);
   const [leads, setLeads] = useState([]);
+  const [allLeadsForStats, setAllLeadsForStats] = useState([]); // All leads for stats calculation
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(getEasternNow());
@@ -152,88 +153,11 @@ const AdminDashboard = () => {
     resetPaginationAndFetch();
   };
 
-  useEffect(() => {
-    fetchStats();
-    fetchOrganizations();
-    if (showLeadsSection) {
-      fetchLeads();
-    }
-    
-    // Auto-refresh every 10 seconds
-    const interval = setInterval(() => {
-      fetchStats(true);
-      if (showLeadsSection) {
-        fetchLeads(true);
-      }
-      setLastUpdated(getEasternNow());
-    }, 10000);
 
-    return () => clearInterval(interval);
-  }, [showLeadsSection, qualificationFilter, duplicateFilter, organizationFilter, dateFilter]);
 
-  // Update search results when leads change
-  useEffect(() => {
-    if (searchTerm.trim()) {
-      handleSearch(searchTerm);
-    }
-  }, [leads]);
 
-  useEffect(() => {
-    // Socket.IO event listeners for real-time updates
-    if (socket) {
-      console.log('Admin Dashboard: Setting up socket listeners');
-      
-      const handleLeadUpdated = (data) => {
-        console.log('Lead updated via socket:', data);
-        toast.success(`Lead updated by ${data.updatedBy}`, {
-          duration: 2000,
-          icon: '🔄'
-        });
-        fetchStats(true);
-        if (showLeadsSection) {
-          fetchLeads(true);
-        }
-        setLastUpdated(getEasternNow());
-      };
 
-      const handleLeadCreated = (data) => {
-        console.log('New lead created via socket:', data);
-        toast.success(`New lead created by ${data.createdBy}`, {
-          duration: 2000,
-          icon: '✅'
-        });
-        fetchStats(true);
-        if (showLeadsSection) {
-          fetchLeads(true);
-        }
-        setLastUpdated(getEasternNow());
-      };
 
-      const handleLeadDeleted = (data) => {
-        console.log('Lead deleted via socket:', data);
-        toast.success(`Lead deleted by ${data.deletedBy}`, {
-          duration: 2000,
-          icon: '🗑️'
-        });
-        fetchStats(true);
-        if (showLeadsSection) {
-          fetchLeads(true);
-        }
-        setLastUpdated(getEasternNow());
-      };
-
-      socket.on('leadUpdated', handleLeadUpdated);
-      socket.on('leadCreated', handleLeadCreated);
-      socket.on('leadDeleted', handleLeadDeleted);
-
-      // Cleanup socket listeners
-      return () => {
-        socket.off('leadUpdated', handleLeadUpdated);
-        socket.off('leadCreated', handleLeadCreated);
-        socket.off('leadDeleted', handleLeadDeleted);
-      };
-    }
-  }, [socket, showLeadsSection]);
 
   const fetchStats = async (silent = false) => {
     if (!silent) {
@@ -259,6 +183,64 @@ const AdminDashboard = () => {
       }
     }
   };
+
+  // Fetch all leads for stats calculation (handles large datasets up to lakhs)
+  const fetchAllLeadsForStats = useCallback(async () => {
+    try {
+      console.log('Admin Dashboard: Fetching all leads for stats calculation...');
+      const timestamp = new Date().getTime();
+      let allLeads = [];
+      let currentPage = 1;
+      const limit = 1000; // Maximum allowed limit
+      let hasMorePages = true;
+      let totalRecords = 0;
+      
+      while (hasMorePages) {
+        const url = `/api/leads?page=${currentPage}&limit=${limit}&_t=${timestamp}`;
+        
+        const response = await axios.get(url);
+        const responseData = response.data?.data;
+        const pageLeads = responseData?.leads || [];
+        const pagination = responseData?.pagination;
+        
+        if (Array.isArray(pageLeads)) {
+          allLeads = [...allLeads, ...pageLeads];
+        }
+        
+        // Update total records count
+        if (pagination) {
+          totalRecords = pagination.total;
+        }
+        
+        // Check if there are more pages
+        if (pagination && currentPage < pagination.pages) {
+          currentPage++;
+          
+          // Progress logging for large datasets
+          if (currentPage % 10 === 0) {
+            console.log(`Fetching page ${currentPage}/${pagination.pages} - ${allLeads.length}/${totalRecords} leads loaded`);
+          }
+        } else {
+          hasMorePages = false;
+        }
+        
+        // Safety check to prevent infinite loop - increased limit for lakhs of records
+        if (currentPage > 1000) {
+          console.warn('Safety break: More than 1000 pages (10 lakh records), stopping fetch');
+          hasMorePages = false;
+        }
+      }
+      
+      console.log(`Successfully fetched ${allLeads.length} leads for stats calculation`);
+      
+      setAllLeadsForStats(allLeads);
+      return allLeads;
+    } catch (error) {
+      console.error('Error fetching all leads for stats:', error);
+      setAllLeadsForStats([]);
+      return [];
+    }
+  }, []);
 
   const fetchLeads = useCallback(async (silent = false, page = pagination.page) => {
     try {
@@ -313,6 +295,44 @@ const AdminDashboard = () => {
       setLeads([]);
     }
   }, [pagination.page, pagination.limit, qualificationFilter, duplicateFilter, organizationFilter, dateFilter]);
+
+  // Initial data fetching and auto-refresh
+  useEffect(() => {
+    const initializeData = async () => {
+      // Always fetch stats first to determine dataset size
+      await fetchStats();
+      await fetchOrganizations();
+      
+      // Only fetch all leads for smaller datasets (<= 10,000 records)
+      if (!stats || stats.totalLeads <= 10000) {
+        await fetchAllLeadsForStats();
+      } else {
+        console.log('Large dataset detected, skipping full leads fetch for performance');
+      }
+      
+      if (showLeadsSection) {
+        fetchLeads();
+      }
+    };
+
+    initializeData();
+    
+    // Auto-refresh every 10 seconds
+    const interval = setInterval(() => {
+      fetchStats(true);
+      // Only refresh all leads for smaller datasets
+      if (!stats || stats.totalLeads <= 10000) {
+        fetchAllLeadsForStats();
+      }
+      if (showLeadsSection) {
+        fetchLeads(true);
+      }
+      setLastUpdated(getEasternNow());
+    }, 10000);
+
+    return () => clearInterval(interval);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [showLeadsSection, qualificationFilter, duplicateFilter, organizationFilter, dateFilter, fetchLeads, fetchAllLeadsForStats]);
 
   // Pagination handler
   const handlePageChange = async (newPage) => {
@@ -447,7 +467,7 @@ const AdminDashboard = () => {
   };
 
   // Check if user is from REDDINGTON GLOBAL CONSULTANCY
-  const isReddingtonAdmin = () => {
+  const isReddingtonAdmin = useCallback(() => {
     console.log('User object:', user);
     console.log('User organization:', user?.organization);
     console.log('Organization name:', user?.organization?.name);
@@ -462,7 +482,88 @@ const AdminDashboard = () => {
     console.log('Is Reddington admin (by ID):', isReddingtonById);
     console.log('Final result:', isReddington);
     return isReddington;
-  };
+  }, [user]);
+
+  // Socket.IO event listeners for real-time updates
+  useEffect(() => {
+    if (socket) {
+      console.log('Admin Dashboard: Setting up socket listeners');
+      
+      const handleLeadUpdated = (data) => {
+        console.log('Lead updated via socket:', data);
+        // Only show notifications to main organization (REDDINGTON) admins
+        if (isReddingtonAdmin()) {
+          toast.success(`Lead updated by ${data.updatedBy}`, {
+            duration: 2000,
+            icon: '🔄'
+          });
+        }
+        // Always refresh stats
+        fetchStats(true);
+        // Only refresh all leads for smaller datasets to avoid performance issues
+        if (!stats || stats.totalLeads <= 10000) {
+          fetchAllLeadsForStats();
+        }
+        if (showLeadsSection) {
+          fetchLeads(true);
+        }
+        setLastUpdated(getEasternNow());
+      };
+
+      const handleLeadCreated = (data) => {
+        console.log('New lead created via socket:', data);
+        // Only show notifications to main organization (REDDINGTON) admins
+        if (isReddingtonAdmin()) {
+          toast.success(`New lead created by ${data.createdBy}`, {
+            duration: 2000,
+            icon: '✅'
+          });
+        }
+        // Always refresh stats
+        fetchStats(true);
+        // Only refresh all leads for smaller datasets to avoid performance issues
+        if (!stats || stats.totalLeads <= 10000) {
+          fetchAllLeadsForStats();
+        }
+        if (showLeadsSection) {
+          fetchLeads(true);
+        }
+        setLastUpdated(getEasternNow());
+      };
+
+      const handleLeadDeleted = (data) => {
+        console.log('Lead deleted via socket:', data);
+        // Only show notifications to main organization (REDDINGTON) admins
+        if (isReddingtonAdmin()) {
+          toast.success(`Lead deleted by ${data.deletedBy}`, {
+            duration: 2000,
+            icon: '🗑️'
+          });
+        }
+        // Always refresh stats
+        fetchStats(true);
+        // Only refresh all leads for smaller datasets to avoid performance issues
+        if (!stats || stats.totalLeads <= 10000) {
+          fetchAllLeadsForStats();
+        }
+        if (showLeadsSection) {
+          fetchLeads(true);
+        }
+        setLastUpdated(getEasternNow());
+      };
+
+      socket.on('leadUpdated', handleLeadUpdated);
+      socket.on('leadCreated', handleLeadCreated);
+      socket.on('leadDeleted', handleLeadDeleted);
+
+      // Cleanup socket listeners
+      return () => {
+        socket.off('leadUpdated', handleLeadUpdated);
+        socket.off('leadCreated', handleLeadCreated);
+        socket.off('leadDeleted', handleLeadDeleted);
+      };
+    }
+  }, [socket, showLeadsSection, fetchLeads, fetchAllLeadsForStats, stats, isReddingtonAdmin]);
 
   // Search functionality
   const handleSearch = useCallback((term) => {
@@ -485,6 +586,13 @@ const AdminDashboard = () => {
     });
     setSearchResults(filtered);
   }, [leads]);
+
+  // Update search results when leads change
+  useEffect(() => {
+    if (searchTerm.trim()) {
+      handleSearch(searchTerm);
+    }
+  }, [leads, handleSearch, searchTerm]);
 
   // Lead update functionality
   const handleEditToggle = () => {
@@ -649,6 +757,63 @@ const AdminDashboard = () => {
     fetchStats(true);
   };
 
+  // Calculate real-time stats from all leads data or use server stats for large datasets
+  const calculateRealTimeStats = useCallback(() => {
+    // For large datasets (>10,000 records), rely on server stats to avoid performance issues
+    if (stats && stats.totalLeads > 10000) {
+      console.log(`Large dataset detected (${stats.totalLeads} records), using server-calculated stats`);
+      return {
+        ...stats,
+        pendingLeads: stats.pendingLeads || 0, // Ensure pending leads is included
+        immediateEnrollmentLeads: stats.immediateEnrollmentLeads || 0
+      };
+    }
+
+    // For smaller datasets, calculate from local data for real-time accuracy
+    if (!allLeadsForStats || allLeadsForStats.length === 0) {
+      return stats; // Return server stats if no all leads data
+    }
+
+    const totalLeads = allLeadsForStats.length;
+    const qualifiedLeads = allLeadsForStats.filter(lead => lead.qualificationStatus === 'qualified').length;
+    const disqualifiedLeads = allLeadsForStats.filter(lead => 
+      lead.qualificationStatus === 'disqualified' || lead.qualificationStatus === 'unqualified'
+    ).length;
+    const pendingLeads = allLeadsForStats.filter(lead => lead.qualificationStatus === 'pending').length;
+    const hotLeads = allLeadsForStats.filter(lead => lead.category === 'hot').length;
+    
+    // Calculate conversion rate based on qualified leads divided by immediate enrollment leads
+    const immediateEnrollmentLeads = allLeadsForStats.filter(lead => 
+      lead.leadProgressStatus === 'Immediate Enrollment'
+    ).length;
+    const calculatedConversionRate = immediateEnrollmentLeads > 0 ? (qualifiedLeads / immediateEnrollmentLeads) * 100 : 0;
+    
+    // Calculate qualification rate
+    const totalProcessed = qualifiedLeads + disqualifiedLeads;
+    const calculatedQualificationRate = totalProcessed > 0 ? (qualifiedLeads / totalProcessed) * 100 : 0;
+
+    // Get unique active agents count
+    const activeAgents = new Set();
+    allLeadsForStats.forEach(lead => {
+      if (lead.createdBy?.name) activeAgents.add(lead.createdBy.name);
+      if (lead.assignedTo?.name) activeAgents.add(lead.assignedTo.name);
+      if (lead.lastUpdatedBy) activeAgents.add(lead.lastUpdatedBy);
+    });
+
+    return {
+      ...stats, // Keep server stats as fallback
+      totalLeads,
+      qualifiedLeads,
+      disqualifiedLeads,
+      pendingLeads,
+      hotLeads,
+      conversionRate: calculatedConversionRate,
+      qualificationRate: calculatedQualificationRate,
+      activeAgents: activeAgents.size,
+      immediateEnrollmentLeads // Add this for reference
+    };
+  }, [allLeadsForStats, stats]);
+
   if (loading) {
     return <LoadingSpinner message="Loading admin dashboard..." />;
   }
@@ -667,9 +832,10 @@ const AdminDashboard = () => {
     );
   }
 
-  const conversionRate = parseFloat(stats.conversionRate) || 0;
-  const qualificationRate = parseFloat(stats.qualificationRate) || 0;
-  
+  // Get real-time stats
+  const realTimeStats = calculateRealTimeStats();
+  const qualificationRate = parseFloat(realTimeStats.qualificationRate) || 0;
+
   // Apply search filter first, then date filter
   const baseLeads = searchTerm.trim() ? searchResults : leads;
   const filteredLeads = getDateFilteredLeads(baseLeads);
@@ -699,18 +865,18 @@ const AdminDashboard = () => {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-6 gap-8">
+        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-8">
           <div className="bg-white p-7 rounded-2xl shadow-xl border border-gray-100 flex items-center gap-4">
             <div className="p-4 rounded-full bg-blue-100">
               <BarChart3 className="h-7 w-7 text-blue-600" />
             </div>
             <div>
               <p className="text-sm font-medium text-gray-600">Total Leads</p>
-              <p className="text-3xl font-bold text-gray-900">{stats.totalLeads}</p>
+              <p className="text-3xl font-bold text-gray-900">{realTimeStats.totalLeads}</p>
             </div>
           </div>
 
-          <div className="bg-white p-7 rounded-2xl shadow-xl border border-gray-100 flex items-center gap-4">
+          {/* <div className="bg-white p-7 rounded-2xl shadow-xl border border-gray-100 flex items-center gap-4">
             <div className="p-4 rounded-full bg-green-100">
               <TrendingUp className="h-7 w-7 text-green-600" />
             </div>
@@ -718,7 +884,7 @@ const AdminDashboard = () => {
               <p className="text-sm font-medium text-gray-600">Hot Leads</p>
               <p className="text-3xl font-bold text-gray-900">{stats.hotLeads}</p>
             </div>
-          </div>
+          </div> */}
 
           <div className="bg-white p-7 rounded-2xl shadow-xl border border-gray-100 flex items-center gap-4">
             <div className="p-4 rounded-full bg-emerald-100">
@@ -726,8 +892,8 @@ const AdminDashboard = () => {
             </div>
             <div>
               <p className="text-sm font-medium text-gray-600">Qualified</p>
-              <p className="text-3xl font-bold text-gray-900">{stats.qualifiedLeads || 0}</p>
-              <p className="text-xs text-emerald-600 font-medium">{qualificationRate}%</p>
+              <p className="text-3xl font-bold text-gray-900">{realTimeStats.qualifiedLeads || 0}</p>
+              <p className="text-xs text-emerald-600 font-medium">{qualificationRate.toFixed(1)}%</p>
             </div>
           </div>
 
@@ -737,19 +903,32 @@ const AdminDashboard = () => {
             </div>
             <div>
               <p className="text-sm font-medium text-gray-600">Disqualified</p>
-              <p className="text-3xl font-bold text-gray-900">{stats.disqualifiedLeads || 0}</p>
+              <p className="text-3xl font-bold text-gray-900">{realTimeStats.disqualifiedLeads || 0}</p>
             </div>
           </div>
 
           <div className="bg-white p-7 rounded-2xl shadow-xl border border-gray-100 flex items-center gap-4">
+            <div className="p-4 rounded-full bg-orange-100">
+              <Clock className="h-7 w-7 text-orange-600" />
+            </div>
+            <div>
+              <p className="text-sm font-medium text-gray-600">Pending</p>
+              <p className="text-3xl font-bold text-gray-900">{realTimeStats.pendingLeads || 0}</p>
+            </div>
+          </div>
+
+          {/* <div className="bg-white p-7 rounded-2xl shadow-xl border border-gray-100 flex items-center gap-4">
             <div className="p-4 rounded-full bg-yellow-100">
               <Target className="h-7 w-7 text-yellow-600" />
             </div>
             <div>
               <p className="text-sm font-medium text-gray-600">Conversion Rate</p>
-              <p className="text-3xl font-bold text-gray-900">{conversionRate.toFixed(1)}%</p>
+              <p className="text-3xl font-bold text-gray-900">{conversionRate.toFixed(0)}%</p>
+              <p className="text-xs text-gray-500">
+                Qualified / Immediate Enrollment ({realTimeStats.immediateEnrollmentLeads || 0})
+              </p>
             </div>
-          </div>
+          </div> */}
 
           <div className="bg-white p-7 rounded-2xl shadow-xl border border-gray-100 flex items-center gap-4">
             <div className="p-4 rounded-full bg-purple-100">
@@ -757,7 +936,7 @@ const AdminDashboard = () => {
             </div>
             <div>
               <p className="text-sm font-medium text-gray-600">Active Agents</p>
-              <p className="text-3xl font-bold text-gray-900">{stats.activeAgents || 0}</p>
+              <p className="text-3xl font-bold text-gray-900">{realTimeStats.activeAgents || 0}</p>
             </div>
           </div>
         </div>
@@ -1048,16 +1227,18 @@ const AdminDashboard = () => {
               </div>
             </div>
             
-            {/* Export Button */}
-            <div className="flex items-center">
-              <button
-                onClick={handleExportLeads}
-                className="px-3 py-1.5 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700 transition-colors flex items-center gap-1.5"
-              >
-                <Download size={14} />
-                <span>Export CSV</span>
-              </button>
-            </div>
+            {/* Export Button - Only for Reddington Admin */}
+            {isReddingtonAdmin() && (
+              <div className="flex items-center">
+                <button
+                  onClick={handleExportLeads}
+                  className="px-3 py-1.5 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700 transition-colors flex items-center gap-1.5"
+                >
+                  <Download size={14} />
+                  <span>Export CSV</span>
+                </button>
+              </div>
+            )}
           </div>
           
           {/* Filter Summary */}
@@ -1186,7 +1367,7 @@ const AdminDashboard = () => {
                           ) : (
                             <span className="text-gray-400 italic">No status</span>
                           )}
-                          {lead.lastUpdatedBy && (
+                          {isReddingtonAdmin() && lead.lastUpdatedBy && (
                             <div className="text-xs text-gray-500 mt-0.5">
                               by {lead.lastUpdatedBy}
                             </div>
@@ -1235,7 +1416,7 @@ const AdminDashboard = () => {
                         <div className="col-span-3">
                           <span className="text-blue-600">Created: {formatEasternTimeForDisplay(lead.createdAt, { includeTime: false })}</span>
                         </div>
-                        {lead.lastUpdatedBy && (
+                        {isReddingtonAdmin() && lead.lastUpdatedBy && (
                           <div className="col-span-3">
                             <span className="text-green-600">Updated: {lead.lastUpdatedBy}</span>
                           </div>
@@ -1668,19 +1849,19 @@ const AdminDashboard = () => {
                             onChange={(e) => handleInputChange('status', e.target.value)}
                             className="text-sm border border-gray-300 rounded px-2 py-1 w-32"
                           >
-                            <option value="">Select Status</option>
+                            {/* <option value="">Select Status</option>
                             <option value="new">New</option>
                             <option value="interested">Interested</option>
                             <option value="not-interested">Not Interested</option>
                             <option value="successful">Successful</option>
-                            <option value="follow-up">Follow-up</option>
+                            <option value="follow-up">Follow-up</option> */}
                           </select>
                         ) : (
                           <div className="text-right">{getStatusBadge(selectedLead.status)}</div>
                         )}
                       </div>
                       <div className="flex justify-between items-start">
-                        <span className="text-sm font-medium text-gray-600">Company:</span>
+                        {/* <span className="text-sm font-medium text-gray-600">Company:</span> */}
                         {isReddingtonAdmin() && isEditing ? (
                           <input
                             type="text"
@@ -1690,26 +1871,26 @@ const AdminDashboard = () => {
                             placeholder="Company name"
                           />
                         ) : (
-                          <span className="text-sm text-gray-900 text-right">{selectedLead.company || '—'}</span>
+                          <span className="text-sm text-gray-900 text-right">{selectedLead.company || ''}</span>
                         )}
                       </div>
                       <div className="flex justify-between items-start">
-                        <span className="text-sm font-medium text-gray-600">Completion %:</span>
+                        {/* <span className="text-sm font-medium text-gray-600">Completion %:</span> */}
                         {isReddingtonAdmin() && isEditing ? (
                           <input
-                            type="number"
-                            min="0"
-                            max="100"
-                            value={editedLead.completionPercentage || ''}
-                            onChange={(e) => handleInputChange('completionPercentage', parseInt(e.target.value) || 0)}
-                            className="text-sm text-gray-900 text-right border border-gray-300 rounded px-2 py-1 w-20"
-                            placeholder="0"
+                            // type="number"
+                            // min="0"
+                            // max="100"
+                            // value={editedLead.completionPercentage || ''}
+                            // onChange={(e) => handleInputChange('completionPercentage', parseInt(e.target.value) || 0)}
+                            // className="text-sm text-gray-900 text-right border border-gray-300 rounded px-2 py-1 w-20"
+                            // placeholder=""
                           />
                         ) : (
-                          <span className="text-sm text-gray-900 text-right">{selectedLead.completionPercentage || 0}%</span>
+                          <span className="text-sm text-gray-900 text-right"></span>
                         )}
                       </div>
-                      {selectedLead.lastUpdatedBy && (
+                      {isReddingtonAdmin() && selectedLead.lastUpdatedBy && (
                         <div className="flex justify-between items-start">
                           <span className="text-sm font-medium text-gray-600">Updated By:</span>
                           <span className="text-sm text-green-700 text-right font-medium">{selectedLead.lastUpdatedBy}</span>
@@ -1809,7 +1990,7 @@ const AdminDashboard = () => {
                         )}
                       </div>
                       
-                      {selectedLead.lastUpdatedBy && (
+                      {isReddingtonAdmin() && selectedLead.lastUpdatedBy && (
                         <div className="flex justify-between items-start">
                           <span className="text-sm font-medium text-gray-600">Last Updated By:</span>
                           <span className="text-sm text-teal-700 text-right font-medium">{selectedLead.lastUpdatedBy}</span>

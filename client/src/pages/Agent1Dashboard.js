@@ -154,10 +154,17 @@ const Agent1Dashboard = () => {
     const handleRefresh = () => fetchLeads(pagination.page);
     window.addEventListener('refreshLeads', handleRefresh);
     
+    // Auto-refresh every 10 seconds
+    const interval = setInterval(() => {
+      fetchLeads(); // fetchLeads will use current pagination.page from closure
+    }, 10000);
+    
     return () => {
       window.removeEventListener('refreshLeads', handleRefresh);
+      clearInterval(interval);
     };
-  }, [fetchLeads, pagination.page]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [fetchLeads]);
 
   // Pagination handlers
   const handlePageChange = async (newPage) => {
@@ -1950,8 +1957,8 @@ const Agent1Dashboard = () => {
 
                   {/* Assignment Notes */}
                   <div className="mb-6">
-                    <label className="block text-sm font-semibold text-gray-700 mb-2">
-                      Assignment Notes (Optional)
+                    <label className="block text-sm font-bold text-red-600 mb-2">
+                      Lead Assigned To Closure Name (compulsory for Agent1)
                     </label>
                     <textarea
                       rows="3"

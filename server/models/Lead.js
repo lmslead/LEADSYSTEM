@@ -205,22 +205,32 @@ const leadSchema = new mongoose.Schema({
   // Agent 2 Unified Progress Status (New field)
   leadProgressStatus: {
     type: String,
-    enum: [
-      'Appointment Scheduled',
-      'Immediate Enrollment', 
-      'Info Provided – Awaiting Decision',
-      'Nurture – Not Ready',
-      'Qualified – Meets Criteria',
-      'Pre-Qualified – Docs Needed',
-      'Disqualified – Debt Too Low',
-      'Disqualified – Secured Debt Only',
-      'Disqualified – Non-Service State',
-      'Disqualified – Active with Competitor',
-      'Callback Needed',
-      'Hung Up',
-      'Not Interested',
-      'DNC (Do Not Contact)'
-    ]
+    validate: {
+      validator: function(value) {
+        if (!value || value.trim() === '') return true; // Allow empty values
+        
+        const predefinedStatuses = [
+          'Appointment Scheduled',
+          'Immediate Enrollment', 
+          'Info Provided – Awaiting Decision',
+          'Nurture – Not Ready',
+          'Qualified – Meets Criteria',
+          'Disqualified – Debt Too Low',
+          'Disqualified – Secured Debt Only',
+          'Disqualified – Non-Service State',
+          'Disqualified – Active with Competitor',
+          'Disqualified - unacceptable creditors',
+          'Callback Needed',
+          'Hung Up',
+          'Not Interested',
+          'DNC (Do Not Contact)'
+        ];
+        
+        // Allow predefined statuses or any custom string (for "Others" option)
+        return predefinedStatuses.includes(value) || (typeof value === 'string' && value.trim().length > 0);
+      },
+      message: 'Lead progress status must be a valid string'
+    }
   },
   
   // Lead Qualification Status (for admin filtering)
@@ -510,6 +520,9 @@ leadSchema.statics.getStatistics = async function() {
         },
         pendingLeads: {
           $sum: { $cond: [{ $eq: ['$qualificationStatus', 'pending'] }, 1, 0] }
+        },
+        immediateEnrollmentLeads: {
+          $sum: { $cond: [{ $eq: ['$leadProgressStatus', 'Immediate Enrollment'] }, 1, 0] }
         }
       }
     }
@@ -525,7 +538,8 @@ leadSchema.statics.getStatistics = async function() {
     followUpLeads: 0,
     qualifiedLeads: 0,
     disqualifiedLeads: 0,
-    pendingLeads: 0
+    pendingLeads: 0,
+    immediateEnrollmentLeads: 0
   };
 
   // Calculate conversion rate

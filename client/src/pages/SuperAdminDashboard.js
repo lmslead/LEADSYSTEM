@@ -92,25 +92,39 @@ const SuperAdminDashboard = () => {
     requirements: ''
   });
 
-  useEffect(() => {
-    fetchData();
-  }, []);
+  const fetchAdmins = useCallback(async () => {
+    try {
+      const params = new URLSearchParams();
+      if (adminFilters.search) params.append('search', adminFilters.search);
+      if (adminFilters.organization) params.append('organization', adminFilters.organization);
 
-  // Refetch admins when admin filters change
-  useEffect(() => {
-    if (activeTab === 'overview') {
-      fetchAdmins();
+      const response = await axios.get(`/api/auth/admins?${params.toString()}`);
+      const adminsData = Array.isArray(response.data?.data) ? response.data.data : [];
+      setAdmins(adminsData);
+    } catch (error) {
+      console.error('Error fetching admins:', error);
+      toast.error('Failed to load admins');
+      setAdmins([]);
     }
-  }, [adminFilters.search, adminFilters.organization, activeTab]);
+  }, [adminFilters.search, adminFilters.organization]);
 
-  // Refetch agents when agent filters change
-  useEffect(() => {
-    if (activeTab === 'overview') {
-      fetchAgents();
+  const fetchAgents = useCallback(async () => {
+    try {
+      const params = new URLSearchParams();
+      if (agentFilters.search) params.append('search', agentFilters.search);
+      if (agentFilters.organization) params.append('organization', agentFilters.organization);
+
+      const response = await axios.get(`/api/auth/agents?${params.toString()}`);
+      const agentsData = Array.isArray(response.data?.data) ? response.data.data : [];
+      setAgents(agentsData);
+    } catch (error) {
+      console.error('Error fetching agents:', error);
+      toast.error('Failed to load agents');
+      setAgents([]);
     }
-  }, [agentFilters.search, agentFilters.organization, activeTab]);
+  }, [agentFilters.search, agentFilters.organization]);
 
-  const fetchData = async () => {
+  const fetchData = useCallback(async () => {
     try {
       setLoading(true);
       const organizationsResponse = await axios.get('/api/organizations');
@@ -126,39 +140,33 @@ const SuperAdminDashboard = () => {
     } finally {
       setLoading(false);
     }
-  };
+  }, [fetchAdmins, fetchAgents]);
 
-  const fetchAdmins = async () => {
-    try {
-      const params = new URLSearchParams();
-      if (adminFilters.search) params.append('search', adminFilters.search);
-      if (adminFilters.organization) params.append('organization', adminFilters.organization);
+  // Main effect to fetch initial data and set up auto-refresh
+  useEffect(() => {
+    fetchData();
+    
+    // Auto-refresh every 10 seconds
+    const interval = setInterval(() => {
+      fetchData();
+    }, 10000);
+    
+    return () => clearInterval(interval);
+  }, [fetchData]);
 
-      const response = await axios.get(`/api/auth/admins?${params.toString()}`);
-      const adminsData = Array.isArray(response.data?.data) ? response.data.data : [];
-      setAdmins(adminsData);
-    } catch (error) {
-      console.error('Error fetching admins:', error);
-      toast.error('Failed to load admins');
-      setAdmins([]);
+  // Refetch admins when admin filters change
+  useEffect(() => {
+    if (activeTab === 'overview') {
+      fetchAdmins();
     }
-  };
+  }, [adminFilters.search, adminFilters.organization, activeTab, fetchAdmins]);
 
-  const fetchAgents = async () => {
-    try {
-      const params = new URLSearchParams();
-      if (agentFilters.search) params.append('search', agentFilters.search);
-      if (agentFilters.organization) params.append('organization', agentFilters.organization);
-
-      const response = await axios.get(`/api/auth/agents?${params.toString()}`);
-      const agentsData = Array.isArray(response.data?.data) ? response.data.data : [];
-      setAgents(agentsData);
-    } catch (error) {
-      console.error('Error fetching agents:', error);
-      toast.error('Failed to load agents');
-      setAgents([]);
+  // Refetch agents when agent filters change
+  useEffect(() => {
+    if (activeTab === 'overview') {
+      fetchAgents();
     }
-  };
+  }, [agentFilters.search, agentFilters.organization, activeTab, fetchAgents]);
 
   const handleDeleteAdmin = async (adminId, adminName) => {
     if (window.confirm(`Are you sure you want to delete admin "${adminName}"? This action cannot be undone.`)) {
