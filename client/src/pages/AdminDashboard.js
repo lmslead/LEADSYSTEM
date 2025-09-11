@@ -296,7 +296,7 @@ const AdminDashboard = () => {
     }
   }, [pagination.page, pagination.limit, qualificationFilter, duplicateFilter, organizationFilter, dateFilter]);
 
-  // Initial data fetching and auto-refresh
+  // Initial data fetching
   useEffect(() => {
     const initializeData = async () => {
       // Always fetch stats first to determine dataset size
@@ -316,21 +316,6 @@ const AdminDashboard = () => {
     };
 
     initializeData();
-    
-    // Auto-refresh every 10 seconds
-    const interval = setInterval(() => {
-      fetchStats(true);
-      // Only refresh all leads for smaller datasets
-      if (!stats || stats.totalLeads <= 10000) {
-        fetchAllLeadsForStats();
-      }
-      if (showLeadsSection) {
-        fetchLeads(true);
-      }
-      setLastUpdated(getEasternNow());
-    }, 10000);
-
-    return () => clearInterval(interval);
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showLeadsSection, qualificationFilter, duplicateFilter, organizationFilter, dateFilter, fetchLeads, fetchAllLeadsForStats]);
 

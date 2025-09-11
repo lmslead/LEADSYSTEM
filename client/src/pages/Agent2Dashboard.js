@@ -165,11 +165,6 @@ const Agent2Dashboard = () => {
     const handleRefresh = () => fetchLeads(pagination.page);
     window.addEventListener('refreshLeads', handleRefresh);
 
-    // Auto-refresh every 10 seconds
-    const interval = setInterval(() => {
-      fetchLeads(pagination.page);
-    }, 10000);
-
     // Socket.IO event listeners for real-time updates (notifications disabled)
     if (socket) {
       const handleLeadUpdated = (data) => {
@@ -190,7 +185,6 @@ const Agent2Dashboard = () => {
       // Cleanup socket listeners
       return () => {
         window.removeEventListener('refreshLeads', handleRefresh);
-        clearInterval(interval);
         socket.off('leadUpdated', handleLeadUpdated);
         socket.off('leadCreated', handleLeadCreated);
       };
@@ -198,7 +192,6 @@ const Agent2Dashboard = () => {
     
     return () => {
       window.removeEventListener('refreshLeads', handleRefresh);
-      clearInterval(interval);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [filters, socket]);

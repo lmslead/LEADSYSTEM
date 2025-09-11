@@ -142,16 +142,9 @@ const SuperAdminDashboard = () => {
     }
   }, [fetchAdmins, fetchAgents]);
 
-  // Main effect to fetch initial data and set up auto-refresh
+  // Main effect to fetch initial data
   useEffect(() => {
     fetchData();
-    
-    // Auto-refresh every 10 seconds
-    const interval = setInterval(() => {
-      fetchData();
-    }, 10000);
-    
-    return () => clearInterval(interval);
   }, [fetchData]);
 
   // Refetch admins when admin filters change

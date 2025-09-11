@@ -154,14 +154,8 @@ const Agent1Dashboard = () => {
     const handleRefresh = () => fetchLeads(pagination.page);
     window.addEventListener('refreshLeads', handleRefresh);
     
-    // Auto-refresh every 10 seconds
-    const interval = setInterval(() => {
-      fetchLeads(); // fetchLeads will use current pagination.page from closure
-    }, 10000);
-    
     return () => {
       window.removeEventListener('refreshLeads', handleRefresh);
-      clearInterval(interval);
     };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [fetchLeads]);
