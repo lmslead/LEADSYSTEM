@@ -242,8 +242,11 @@ const Agent1Dashboard = () => {
     const errors = { phone: '', alternatePhone: '' };
     let isValid = true;
 
-    // Validate primary phone if provided
-    if (formData.phone) {
+    // Primary phone is required
+    if (!formData.phone || !formData.phone.trim()) {
+      errors.phone = 'Primary phone number is required';
+      isValid = false;
+    } else {
       const phoneDigits = getDisplayPhone(formData.phone);
       if (phoneDigits.length !== 10) {
         errors.phone = 'Phone number must be exactly 10 digits';
@@ -1160,7 +1163,7 @@ const Agent1Dashboard = () => {
                       {/* Phone Numbers */}
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">Primary Phone</label>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Primary Phone *</label>
                           <div className="relative">
                             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                               <span className="text-gray-500 sm:text-sm">+1</span>
@@ -1168,6 +1171,7 @@ const Agent1Dashboard = () => {
                             <input
                               type="tel"
                               name="phone"
+                              required
                               className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white ${
                                 formErrors.phone 
                                   ? 'border-red-300 focus:ring-red-500' 
@@ -1566,7 +1570,7 @@ const Agent1Dashboard = () => {
                       {/* Phone Numbers */}
                       <div className="grid grid-cols-2 gap-4">
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">Primary Phone</label>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">Primary Phone *</label>
                           <div className="relative">
                             <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                               <span className="text-gray-500 sm:text-sm">+1</span>
@@ -1574,6 +1578,7 @@ const Agent1Dashboard = () => {
                             <input
                               type="tel"
                               name="phone"
+                              required
                               className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white ${
                                 formErrors.phone 
                                   ? 'border-red-300 focus:ring-red-500' 
