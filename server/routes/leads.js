@@ -1695,13 +1695,14 @@ router.get('/dashboard/stats', protect, async (req, res) => {
       
       const orgFilter = { createdBy: { $in: userOrganizationIds } };
       
-      const [total, newLeads, qualified, followUp, converted, closed] = await Promise.all([
+      const [total, newLeads, qualified, followUp, converted, closed, immediateEnrollment] = await Promise.all([
         Lead.countDocuments(orgFilter),
         Lead.countDocuments({ ...orgFilter, status: 'new' }),
-        Lead.countDocuments({ ...orgFilter, status: 'qualified' }),
+        Lead.countDocuments({ ...orgFilter, qualificationStatus: 'qualified' }),
         Lead.countDocuments({ ...orgFilter, status: 'follow-up' }),
         Lead.countDocuments({ ...orgFilter, status: 'converted' }),
-        Lead.countDocuments({ ...orgFilter, status: 'closed' })
+        Lead.countDocuments({ ...orgFilter, status: 'closed' }),
+        Lead.countDocuments({ ...orgFilter, callDisposition: 'Immediate Enrollment' })
       ]);
 
       // Get active agents count from admin's organization only
@@ -1711,26 +1712,8 @@ router.get('/dashboard/stats', protect, async (req, res) => {
         isActive: { $ne: false }
       });
 
-      stats = {
-        totalLeads: total,
-        newLeads,
-        qualified,
-        followUp,
-        converted,
-        closed,
-        conversionRate: total > 0 ? ((converted / total) * 100).toFixed(2) : 0,
-        activeAgents
-      };
-    } else {
-      // Get filtered stats for agents
-      const [total, newLeads, qualified, followUp, converted, closed] = await Promise.all([
-        Lead.countDocuments(filter),
-        Lead.countDocuments({ ...filter, status: 'new' }),
-        Lead.countDocuments({ ...filter, status: 'qualified' }),
-        Lead.countDocuments({ ...filter, status: 'follow-up' }),
-        Lead.countDocuments({ ...filter, status: 'converted' }),
-        Lead.countDocuments({ ...filter, status: 'closed' })
-      ]);
+      // Calculate conversion rate: (Immediate Enrollment calls ÷ Qualified leads) × 100
+      const conversionRate = qualified > 0 ? ((immediateEnrollment / qualified) * 100).toFixed(2) : 0;
 
       stats = {
         totalLeads: total,
@@ -1739,7 +1722,36 @@ router.get('/dashboard/stats', protect, async (req, res) => {
         followUp,
         converted,
         closed,
-        conversionRate: total > 0 ? ((converted / total) * 100).toFixed(2) : 0
+        qualifiedLeads: qualified,
+        immediateEnrollmentLeads: immediateEnrollment,
+        conversionRate: conversionRate,
+        activeAgents
+      };
+    } else {
+      // Get filtered stats for agents
+      const [total, newLeads, qualified, followUp, converted, closed, immediateEnrollment] = await Promise.all([
+        Lead.countDocuments(filter),
+        Lead.countDocuments({ ...filter, status: 'new' }),
+        Lead.countDocuments({ ...filter, qualificationStatus: 'qualified' }),
+        Lead.countDocuments({ ...filter, status: 'follow-up' }),
+        Lead.countDocuments({ ...filter, status: 'converted' }),
+        Lead.countDocuments({ ...filter, status: 'closed' }),
+        Lead.countDocuments({ ...filter, callDisposition: 'Immediate Enrollment' })
+      ]);
+
+      // Calculate conversion rate: (Immediate Enrollment calls ÷ Qualified leads) × 100
+      const conversionRate = qualified > 0 ? ((immediateEnrollment / qualified) * 100).toFixed(2) : 0;
+
+      stats = {
+        totalLeads: total,
+        newLeads,
+        qualified,
+        followUp,
+        converted,
+        closed,
+        qualifiedLeads: qualified,
+        immediateEnrollmentLeads: immediateEnrollment,
+        conversionRate: conversionRate
       };
     }
 

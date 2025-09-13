@@ -767,11 +767,12 @@ const AdminDashboard = () => {
     const pendingLeads = allLeadsForStats.filter(lead => lead.qualificationStatus === 'pending').length;
     const hotLeads = allLeadsForStats.filter(lead => lead.category === 'hot').length;
     
-    // Calculate conversion rate based on qualified leads divided by immediate enrollment leads
+    // Calculate conversion rate based on CALL DISPOSITION 'Immediate Enrollment' divided by qualified leads
+    // Formula: (No. of Immediate Enrollment call disposition leads ÷ Qualified leads) × 100
     const immediateEnrollmentLeads = allLeadsForStats.filter(lead => 
-      lead.leadProgressStatus === 'Immediate Enrollment'
+      lead.callDisposition === 'Immediate Enrollment'
     ).length;
-    const calculatedConversionRate = immediateEnrollmentLeads > 0 ? (qualifiedLeads / immediateEnrollmentLeads) * 100 : 0;
+    const calculatedConversionRate = qualifiedLeads > 0 ? parseFloat(((immediateEnrollmentLeads / qualifiedLeads) * 100).toFixed(2)) : 0;
     
     // Calculate qualification rate
     const totalProcessed = qualifiedLeads + disqualifiedLeads;
@@ -820,6 +821,7 @@ const AdminDashboard = () => {
   // Get real-time stats
   const realTimeStats = calculateRealTimeStats();
   const qualificationRate = parseFloat(realTimeStats.qualificationRate) || 0;
+  const conversionRate = parseFloat(realTimeStats.conversionRate) || 0;
 
   // Apply search filter first, then date filter
   const baseLeads = searchTerm.trim() ? searchResults : leads;
@@ -902,18 +904,18 @@ const AdminDashboard = () => {
             </div>
           </div>
 
-          {/* <div className="bg-white p-7 rounded-2xl shadow-xl border border-gray-100 flex items-center gap-4">
+          <div className="bg-white p-7 rounded-2xl shadow-xl border border-gray-100 flex items-center gap-4">
             <div className="p-4 rounded-full bg-yellow-100">
               <Target className="h-7 w-7 text-yellow-600" />
             </div>
             <div>
               <p className="text-sm font-medium text-gray-600">Conversion Rate</p>
-              <p className="text-3xl font-bold text-gray-900">{conversionRate.toFixed(0)}%</p>
+              <p className="text-3xl font-bold text-gray-900">{conversionRate.toFixed(2)}%</p>
               <p className="text-xs text-gray-500">
                 Qualified / Immediate Enrollment ({realTimeStats.immediateEnrollmentLeads || 0})
               </p>
             </div>
-          </div> */}
+          </div>
 
           <div className="bg-white p-7 rounded-2xl shadow-xl border border-gray-100 flex items-center gap-4">
             <div className="p-4 rounded-full bg-purple-100">

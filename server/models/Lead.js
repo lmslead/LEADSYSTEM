@@ -522,7 +522,7 @@ leadSchema.statics.getStatistics = async function() {
           $sum: { $cond: [{ $eq: ['$qualificationStatus', 'pending'] }, 1, 0] }
         },
         immediateEnrollmentLeads: {
-          $sum: { $cond: [{ $eq: ['$leadProgressStatus', 'Immediate Enrollment'] }, 1, 0] }
+          $sum: { $cond: [{ $eq: ['$callDisposition', 'Immediate Enrollment'] }, 1, 0] }
         }
       }
     }
@@ -542,9 +542,9 @@ leadSchema.statics.getStatistics = async function() {
     immediateEnrollmentLeads: 0
   };
 
-  // Calculate conversion rate
-  result.conversionRate = result.totalLeads > 0 
-    ? ((result.successfulLeads / result.totalLeads) * 100).toFixed(2)
+  // Calculate conversion rate: (Immediate Enrollment call disposition leads ÷ Qualified leads) × 100
+  result.conversionRate = result.qualifiedLeads > 0 
+    ? ((result.immediateEnrollmentLeads / result.qualifiedLeads) * 100).toFixed(2)
     : 0;
 
   // Calculate qualification rate
