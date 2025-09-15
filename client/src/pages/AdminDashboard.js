@@ -767,10 +767,10 @@ const AdminDashboard = () => {
     const pendingLeads = allLeadsForStats.filter(lead => lead.qualificationStatus === 'pending').length;
     const hotLeads = allLeadsForStats.filter(lead => lead.category === 'hot').length;
     
-    // Calculate conversion rate based on CALL DISPOSITION 'Immediate Enrollment' divided by qualified leads
-    // Formula: (No. of Immediate Enrollment call disposition leads ÷ Qualified leads) × 100
+    // Calculate conversion rate based on LEAD PROGRESS STATUS 'Immediate Enrollment' divided by qualified leads
+    // Formula: (No. of Immediate Enrollment leads (leadProgressStatus only) ÷ Qualified leads) × 100
     const immediateEnrollmentLeads = allLeadsForStats.filter(lead => 
-      lead.callDisposition === 'Immediate Enrollment'
+      lead.leadProgressStatus === 'Immediate Enrollment'
     ).length;
     const calculatedConversionRate = qualifiedLeads > 0 ? parseFloat(((immediateEnrollmentLeads / qualifiedLeads) * 100).toFixed(2)) : 0;
     

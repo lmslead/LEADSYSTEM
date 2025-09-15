@@ -1702,7 +1702,7 @@ router.get('/dashboard/stats', protect, async (req, res) => {
         Lead.countDocuments({ ...orgFilter, status: 'follow-up' }),
         Lead.countDocuments({ ...orgFilter, status: 'converted' }),
         Lead.countDocuments({ ...orgFilter, status: 'closed' }),
-        Lead.countDocuments({ ...orgFilter, callDisposition: 'Immediate Enrollment' })
+        Lead.countDocuments({ ...orgFilter, leadProgressStatus: 'Immediate Enrollment' })
       ]);
 
       // Get active agents count from admin's organization only
@@ -1736,7 +1736,7 @@ router.get('/dashboard/stats', protect, async (req, res) => {
         Lead.countDocuments({ ...filter, status: 'follow-up' }),
         Lead.countDocuments({ ...filter, status: 'converted' }),
         Lead.countDocuments({ ...filter, status: 'closed' }),
-        Lead.countDocuments({ ...filter, callDisposition: 'Immediate Enrollment' })
+        Lead.countDocuments({ ...filter, leadProgressStatus: 'Immediate Enrollment' })
       ]);
 
       // Calculate conversion rate: (Immediate Enrollment calls ÷ Qualified leads) × 100

@@ -522,7 +522,7 @@ leadSchema.statics.getStatistics = async function() {
           $sum: { $cond: [{ $eq: ['$qualificationStatus', 'pending'] }, 1, 0] }
         },
         immediateEnrollmentLeads: {
-          $sum: { $cond: [{ $eq: ['$callDisposition', 'Immediate Enrollment'] }, 1, 0] }
+          $sum: { $cond: [{ $eq: ['$leadProgressStatus', 'Immediate Enrollment'] }, 1, 0] }
         }
       }
     }
