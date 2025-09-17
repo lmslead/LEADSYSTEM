@@ -145,6 +145,66 @@ const SuperAdminDashboard = () => {
     }
   }, [fetchAdmins, fetchAgents]);
 
+  // Lead tracking functions
+  const fetchLeads = useCallback(async (page = pagination.page) => {
+    try {
+      setLeadsLoading(true);
+      const params = new URLSearchParams();
+      
+      // Add pagination parameters
+      params.append('page', page.toString());
+      params.append('limit', pagination.limit.toString());
+      
+      // Add filters to params
+      if (leadFilters.search) params.append('search', leadFilters.search);
+      if (leadFilters.leadId) params.append('leadId', leadFilters.leadId);
+      if (leadFilters.startDate) params.append('startDate', leadFilters.startDate);
+      if (leadFilters.endDate) params.append('endDate', leadFilters.endDate);
+      if (leadFilters.status) params.append('status', leadFilters.status);
+      if (leadFilters.category) params.append('category', leadFilters.category);
+      if (leadFilters.qualificationStatus) params.append('qualificationStatus', leadFilters.qualificationStatus);
+      if (leadFilters.assignedTo) params.append('assignedTo', leadFilters.assignedTo);
+      if (leadFilters.duplicateStatus) params.append('duplicateStatus', leadFilters.duplicateStatus);
+      if (leadFilters.organization) params.append('organization', leadFilters.organization);
+
+      const response = await axios.get(`/api/leads?${params.toString()}`);
+      const responseData = response.data?.data;
+      const leadsData = responseData?.leads;
+      const paginationData = responseData?.pagination;
+      
+      setLeads(leadsData || []);
+      
+      // Update pagination state if we have pagination data
+      if (paginationData) {
+        setPagination({
+          page: paginationData.page,
+          limit: paginationData.limit,
+          total: paginationData.total,
+          pages: paginationData.pages
+        });
+      }
+    } catch (error) {
+      console.error('Error fetching leads:', error);
+      toast.error('Failed to load leads');
+      setLeads([]);
+    } finally {
+      setLeadsLoading(false);
+    }
+  }, [
+    pagination.page,
+    pagination.limit,
+    leadFilters.search,
+    leadFilters.leadId,
+    leadFilters.startDate,
+    leadFilters.endDate,
+    leadFilters.status,
+    leadFilters.category,
+    leadFilters.qualificationStatus,
+    leadFilters.assignedTo,
+    leadFilters.duplicateStatus,
+    leadFilters.organization
+  ]);
+
   // Handle refresh functionality
   const handleDashboardRefresh = useCallback(() => {
     // Scroll to top using utility function
@@ -247,66 +307,6 @@ const SuperAdminDashboard = () => {
       }
     }
   };
-
-  // Lead tracking functions
-  const fetchLeads = useCallback(async (page = pagination.page) => {
-    try {
-      setLeadsLoading(true);
-      const params = new URLSearchParams();
-      
-      // Add pagination parameters
-      params.append('page', page.toString());
-      params.append('limit', pagination.limit.toString());
-      
-      // Add filters to params
-      if (leadFilters.search) params.append('search', leadFilters.search);
-      if (leadFilters.leadId) params.append('leadId', leadFilters.leadId);
-      if (leadFilters.startDate) params.append('startDate', leadFilters.startDate);
-      if (leadFilters.endDate) params.append('endDate', leadFilters.endDate);
-      if (leadFilters.status) params.append('status', leadFilters.status);
-      if (leadFilters.category) params.append('category', leadFilters.category);
-      if (leadFilters.qualificationStatus) params.append('qualificationStatus', leadFilters.qualificationStatus);
-      if (leadFilters.assignedTo) params.append('assignedTo', leadFilters.assignedTo);
-      if (leadFilters.duplicateStatus) params.append('duplicateStatus', leadFilters.duplicateStatus);
-      if (leadFilters.organization) params.append('organization', leadFilters.organization);
-
-      const response = await axios.get(`/api/leads?${params.toString()}`);
-      const responseData = response.data?.data;
-      const leadsData = responseData?.leads;
-      const paginationData = responseData?.pagination;
-      
-      setLeads(leadsData || []);
-      
-      // Update pagination state if we have pagination data
-      if (paginationData) {
-        setPagination({
-          page: paginationData.page,
-          limit: paginationData.limit,
-          total: paginationData.total,
-          pages: paginationData.pages
-        });
-      }
-    } catch (error) {
-      console.error('Error fetching leads:', error);
-      toast.error('Failed to load leads');
-      setLeads([]);
-    } finally {
-      setLeadsLoading(false);
-    }
-  }, [
-    pagination.page,
-    pagination.limit,
-    leadFilters.search,
-    leadFilters.leadId,
-    leadFilters.startDate,
-    leadFilters.endDate,
-    leadFilters.status,
-    leadFilters.category,
-    leadFilters.qualificationStatus,
-    leadFilters.assignedTo,
-    leadFilters.duplicateStatus,
-    leadFilters.organization
-  ]);
 
   // Pagination handler for leads
   const handlePageChange = async (newPage) => {
