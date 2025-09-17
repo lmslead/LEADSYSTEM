@@ -25,6 +25,8 @@ import LeadReassignModal from '../components/LeadReassignModal';
 import Pagination from '../components/Pagination';
 import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
+import { useRefresh } from '../contexts/RefreshContext';
+import { scrollToTop } from '../utils/scrollUtils';
 import { 
   formatEasternTimeForDisplay, 
   getEasternNow, 
@@ -36,6 +38,7 @@ import {
 const AdminDashboard = () => {
   const { socket } = useSocket();
   const { user } = useAuth();
+  const { registerRefreshCallback, unregisterRefreshCallback } = useRefresh();
   const [stats, setStats] = useState(null);
   const [leads, setLeads] = useState([]);
   const [allLeadsForStats, setAllLeadsForStats] = useState([]); // All leads for stats calculation
@@ -318,6 +321,47 @@ const AdminDashboard = () => {
     initializeData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [showLeadsSection, qualificationFilter, duplicateFilter, organizationFilter, dateFilter, fetchLeads, fetchAllLeadsForStats]);
+
+  // Handle refresh functionality
+  const handleDashboardRefresh = useCallback(() => {
+    // Scroll to top using utility function
+    scrollToTop();
+    
+    // Reset filters and pagination
+    setSearchTerm('');
+    setQualificationFilter('all');
+    setDuplicateFilter('all');
+    setOrganizationFilter('all');
+    setDateFilter('all');
+    setPagination(prev => ({ ...prev, page: 1 }));
+    
+    // Refetch data
+    setRefreshing(true);
+    const refreshData = async () => {
+      try {
+        await fetchStats();
+        await fetchAllLeadsForStats();
+        if (showLeadsSection) {
+          await fetchLeads(false, 1);
+        }
+        setLastUpdated(getEasternNow());
+      } catch (error) {
+        console.error('Error refreshing dashboard:', error);
+        toast.error('Failed to refresh dashboard');
+      } finally {
+        setRefreshing(false);
+      }
+    };
+    refreshData();
+  }, [fetchStats, fetchAllLeadsForStats, fetchLeads, showLeadsSection]);
+
+  // Register refresh callback
+  useEffect(() => {
+    registerRefreshCallback('admin', handleDashboardRefresh);
+    return () => {
+      unregisterRefreshCallback('admin');
+    };
+  }, [registerRefreshCallback, unregisterRefreshCallback, handleDashboardRefresh]);
 
   // Pagination handler
   const handlePageChange = async (newPage) => {

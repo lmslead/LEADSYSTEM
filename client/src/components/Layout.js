@@ -1,6 +1,8 @@
 import React, { useState } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
+import { useRefresh } from '../contexts/RefreshContext';
+import { scrollToTop } from '../utils/scrollUtils';
 import { 
   Home, 
   Users, 
@@ -14,10 +16,12 @@ import {
   Shield
 } from 'lucide-react';
 import LoadingSpinner from './LoadingSpinner';
+import toast from 'react-hot-toast';
 
-const Layout = () => {
+const Layout = ({ onDashboardRefresh }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user, logout, loading } = useAuth();
+  const { triggerRefresh } = useRefresh();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -29,6 +33,37 @@ const Layout = () => {
   const handleLogout = () => {
     logout();
     navigate('/login');
+  };
+
+  // Handle double-click on Dashboard to refresh
+  const handleDashboardDoubleClick = (item) => {
+    if (item.name === 'Dashboard' || item.name === 'SuperAdmin') {
+      // Only refresh if we're already on the dashboard
+      if (isActive(item.href)) {
+        // Scroll to top using utility function
+        scrollToTop();
+        
+        toast.success('Dashboard refreshed!');
+        
+        // Determine dashboard type based on user role and current path
+        let dashboardType = 'admin';
+        if (user.role === 'superadmin') {
+          dashboardType = 'superadmin';
+        } else if (user.role === 'agent1') {
+          dashboardType = 'agent1';
+        } else if (user.role === 'agent2') {
+          dashboardType = 'agent2';
+        }
+        
+        // Trigger refresh through context
+        triggerRefresh(dashboardType);
+        
+        // Also trigger callback if provided
+        if (onDashboardRefresh) {
+          onDashboardRefresh();
+        }
+      }
+    }
   };
 
   // Navigation items based on user role
@@ -121,6 +156,8 @@ const Layout = () => {
           <div className="space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon;
+              const isDashboardItem = item.name === 'Dashboard' || item.name === 'SuperAdmin';
+              
               return (
                 <Link
                   key={item.name}
@@ -131,6 +168,8 @@ const Layout = () => {
                       : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                   } group flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors duration-200`}
                   onClick={() => setSidebarOpen(false)}
+                  onDoubleClick={() => isDashboardItem && handleDashboardDoubleClick(item)}
+                  title={isDashboardItem ? 'Double-click to refresh dashboard and scroll to top' : ''}
                 >
                   <Icon
                     className={`${

@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useRefresh } from '../contexts/RefreshContext';
+import { scrollToTop } from '../utils/scrollUtils';
 import { 
   Plus, 
   Users, 
@@ -14,6 +16,7 @@ import { getEasternNow, formatEasternTimeForDisplay, getEasternStartOfDay, getEa
 
 const Agent1Dashboard = () => {
   const { user } = useAuth();
+  const { registerRefreshCallback, unregisterRefreshCallback } = useRefresh();
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -146,6 +149,34 @@ const Agent1Dashboard = () => {
       setLoading(false);
     }
   }, [pagination.limit]);
+
+  // Handle refresh functionality
+  const handleDashboardRefresh = useCallback(() => {
+    // Scroll to top using utility function
+    scrollToTop();
+    
+    // Reset form and close modals
+    setShowForm(false);
+    setShowEditModal(false);
+    setShowAssignModal(false);
+    setEditingLead(null);
+    setAssigningLead(null);
+    
+    // Reset pagination to first page
+    setPagination(prev => ({ ...prev, page: 1 }));
+    
+    // Refetch leads
+    fetchLeads(1);
+    toast.success('Dashboard refreshed!');
+  }, [fetchLeads]);
+
+  // Register refresh callback
+  useEffect(() => {
+    registerRefreshCallback('agent1', handleDashboardRefresh);
+    return () => {
+      unregisterRefreshCallback('agent1');
+    };
+  }, [registerRefreshCallback, unregisterRefreshCallback, handleDashboardRefresh]);
 
   useEffect(() => {
     fetchLeads(pagination.page);

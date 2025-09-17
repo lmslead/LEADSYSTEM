@@ -1,5 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
+import { useRefresh } from '../contexts/RefreshContext';
+import { scrollToTop } from '../utils/scrollUtils';
 import { 
   Shield, 
   Users, 
@@ -26,6 +28,7 @@ import { formatEasternTimeForDisplay, formatEasternTime, getEasternNow } from '.
 
 const SuperAdminDashboard = () => {
   const { user } = useAuth();
+  const { registerRefreshCallback, unregisterRefreshCallback } = useRefresh();
   const [admins, setAdmins] = useState([]);
   const [agents, setAgents] = useState([]);
   const [organizations, setOrganizations] = useState([]);
@@ -141,6 +144,38 @@ const SuperAdminDashboard = () => {
       setLoading(false);
     }
   }, [fetchAdmins, fetchAgents]);
+
+  // Handle refresh functionality
+  const handleDashboardRefresh = useCallback(() => {
+    // Scroll to top using utility function
+    scrollToTop();
+    
+    // Close all modals and reset form states
+    setShowLeadModal(false);
+    setShowEditLeadModal(false);
+    setSelectedLead(null);
+    
+    // Reset to overview tab
+    setActiveTab('overview');
+    
+    // Reset pagination
+    setPagination(prev => ({ ...prev, page: 1 }));
+    
+    // Refetch all data
+    fetchData();
+    if (activeTab === 'leads') {
+      fetchLeads(1);
+    }
+    toast.success('Dashboard refreshed!');
+  }, [fetchData, fetchLeads, activeTab]);
+
+  // Register refresh callback
+  useEffect(() => {
+    registerRefreshCallback('superadmin', handleDashboardRefresh);
+    return () => {
+      unregisterRefreshCallback('superadmin');
+    };
+  }, [registerRefreshCallback, unregisterRefreshCallback, handleDashboardRefresh]);
 
   // Main effect to fetch initial data
   useEffect(() => {

@@ -3,6 +3,7 @@ import { BrowserRouter as Router, Routes, Route, Navigate } from 'react-router-d
 import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './contexts/AuthContext';
 import { SocketProvider } from './contexts/SocketContext';
+import { RefreshProvider } from './contexts/RefreshContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 import Login from './pages/Login';
@@ -17,7 +18,8 @@ function App() {
   return (
     <div className="App">
       <AuthProvider>
-        <SocketProvider>
+        <RefreshProvider>
+          <SocketProvider>
           <Router>
             <Toaster
               position="top-right"
@@ -95,6 +97,7 @@ function App() {
             </Routes>
           </Router>
         </SocketProvider>
+        </RefreshProvider>
       </AuthProvider>
     </div>
   );

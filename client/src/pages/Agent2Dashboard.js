@@ -1,7 +1,10 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSocket } from '../contexts/SocketContext';
+import { useRefresh } from '../contexts/RefreshContext';
+import { scrollToTop } from '../utils/scrollUtils';
 import { 
+  Plus,
   FileText,
   Clock,
   CheckCircle,
@@ -69,13 +72,16 @@ const CREDIT_SCORE_RANGES = [
 const Agent2Dashboard = () => {
   const { user } = useAuth();
   const { socket } = useSocket();
+  const { registerRefreshCallback, unregisterRefreshCallback } = useRefresh();
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedLead, setSelectedLead] = useState(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
+  const [showCreateForm, setShowCreateForm] = useState(false);  // New lead creation form
   const [updating, setUpdating] = useState(false);
+  const [submitting, setSubmitting] = useState(false);  // For lead creation
 
   // Pagination state
   const [pagination, setPagination] = useState({
@@ -104,6 +110,26 @@ const Agent2Dashboard = () => {
     zipcode: '',
     notes: '',
     requirements: ''
+  });
+
+  // Form data for creating new leads (same structure as Agent 1)
+  const [createFormData, setCreateFormData] = useState({
+    name: '',
+    email: '',
+    phone: '',
+    alternatePhone: '',
+    debtCategory: 'unsecured',
+    debtTypes: [],
+    totalDebtAmount: '',
+    numberOfCreditors: '',
+    monthlyDebtPayment: '',
+    creditScore: '',
+    creditScoreRange: '',
+    address: '',
+    city: '',
+    state: '',
+    zipcode: '',
+    notes: ''
   });
 
   // Form errors for validation
@@ -242,6 +268,39 @@ const Agent2Dashboard = () => {
       await fetchLeads(newPage);
     }
   };
+
+  // Handle refresh functionality
+  const handleDashboardRefresh = useCallback(() => {
+    // Scroll to top using utility function
+    scrollToTop();
+    
+    // Close all modals and reset form states
+    setShowUpdateModal(false);
+    setShowViewModal(false);
+    setShowEditModal(false);
+    setShowCreateForm(false);
+    setSelectedLead(null);
+    
+    // Reset filters and pagination
+    setFilters({
+      status: 'all',
+      qualification: 'all',
+      search: ''
+    });
+    setPagination(prev => ({ ...prev, page: 1 }));
+    
+    // Refetch leads
+    fetchLeads(1);
+    toast.success('Dashboard refreshed!');
+  }, [fetchLeads]);
+
+  // Register refresh callback
+  useEffect(() => {
+    registerRefreshCallback('agent2', handleDashboardRefresh);
+    return () => {
+      unregisterRefreshCallback('agent2');
+    };
+  }, [registerRefreshCallback, unregisterRefreshCallback, handleDashboardRefresh]);
 
   // Reset pagination when filters change
   const resetPaginationAndFetch = useCallback(() => {
@@ -682,6 +741,255 @@ const Agent2Dashboard = () => {
 
   const stats = getLeadStats();
 
+  // Lead creation form handlers (same as Agent 1)
+  const handleCreateFormChange = (e) => {
+    setCreateFormData({
+      ...createFormData,
+      [e.target.name]: e.target.value
+    });
+  };
+
+  // Handle phone number input with automatic +1 prefix and validation
+  const handleCreatePhoneInputChange = (e) => {
+    const { name, value } = e.target;
+    // Remove all non-digits
+    let cleanValue = value.replace(/\D/g, '');
+    
+    // Clear any existing errors for this field
+    setFormErrors(prev => ({
+      ...prev,
+      [name]: ''
+    }));
+    
+    // Validate phone number length
+    if (cleanValue.length > 10) {
+      cleanValue = cleanValue.slice(0, 10);
+    }
+    
+    // Show error if phone number is incomplete (less than 10 digits) and field is not empty
+    if (cleanValue.length > 0 && cleanValue.length < 10) {
+      setFormErrors(prev => ({
+        ...prev,
+        [name]: 'Phone number must be exactly 10 digits'
+      }));
+    }
+    
+    // Store as +1 + 10 digits for backend, but display only the 10 digits
+    const formattedValue = cleanValue.length > 0 ? `+1${cleanValue}` : '';
+    
+    setCreateFormData(prev => ({
+      ...prev,
+      [name]: formattedValue
+    }));
+  };
+
+  // Display phone number without +1 prefix for user input
+  const getCreateDisplayPhone = (phoneValue) => {
+    if (!phoneValue) return '';
+    if (phoneValue.startsWith('+1')) {
+      return phoneValue.slice(2); // Remove +1 prefix for display
+    }
+    return phoneValue.replace(/\D/g, ''); // Remove non-digits if any
+  };
+
+  // Handle debt type selection
+  const handleCreateDebtTypeChange = (type) => {
+    setCreateFormData(prev => {
+      return {
+        ...prev,
+        debtTypes: prev.debtTypes.includes(type)
+          ? prev.debtTypes.filter(t => t !== type)
+          : [...prev.debtTypes, type]
+      };
+    });
+  };
+
+  // Validate create form before submission
+  const validateCreateForm = () => {
+    const errors = {};
+    
+    if (!createFormData.name.trim()) {
+      errors.name = 'Name is required';
+    }
+
+    // Validate phone numbers
+    if (createFormData.phone) {
+      const phoneError = validatePhone(createFormData.phone, 'Phone');
+      if (phoneError) {
+        errors.phone = phoneError;
+      }
+    }
+
+    if (createFormData.alternatePhone) {
+      const altPhoneError = validatePhone(createFormData.alternatePhone, 'Alternate phone');
+      if (altPhoneError) {
+        errors.alternatePhone = altPhoneError;
+      }
+    }
+
+    // Validate email
+    if (createFormData.email) {
+      const emailError = validateEmail(createFormData.email);
+      if (emailError) {
+        errors.email = emailError;
+      }
+    }
+
+    setFormErrors(errors);
+    return Object.keys(errors).length === 0;
+  };
+
+  // Handle create form submission
+  const handleCreateSubmit = async (e) => {
+    e.preventDefault();
+    
+    // Validate form before submission
+    if (!validateCreateForm()) {
+      toast.error('Please fix the validation errors before submitting');
+      return;
+    }
+    
+    setSubmitting(true);
+
+    try {
+      console.log('Agent2 Lead creation started');
+      console.log('Form data:', createFormData);
+      
+      // Build complete form data (same structure as Agent 1)
+      const cleanFormData = {
+        name: createFormData.name.trim(),
+        assignedTo: user._id  // Auto-assign to current Agent2 user
+      };
+
+      // Include category and selected types
+      if (createFormData.debtCategory) {
+        cleanFormData.debtCategory = createFormData.debtCategory;
+      }
+      if (Array.isArray(createFormData.debtTypes) && createFormData.debtTypes.length > 0) {
+        cleanFormData.debtTypes = createFormData.debtTypes;
+        
+        // Map debt types to valid source values
+        const debtTypeToSource = {
+          'Credit Cards': 'Credit Card Debt',
+          'Mortgage Loans': 'Mortgage Debt',
+          'Auto Loans': 'Auto Loans',
+          'Student Loans (private loan)': 'Student Loans',
+          'Medical Bills': 'Medical Debt',
+          'Personal Loans': 'Personal Loans',
+          'Payday Loans': 'Payday Loans',
+          'Secured Personal Loans': 'Secured Debt',
+          'Home Equity Loans': 'Home Equity Loans (HELOCs)',
+          'Title Loans': 'Secured Debt',
+          'Instalment Loans (Unsecured)': 'Installment Debt',
+          'Utility Bills': 'Personal Debt',
+          'Store/Charge Cards': 'Credit Card Debt',
+          'Overdraft Balances': 'Personal Debt',
+          'Business Loans (unsecured)': 'Personal Debt',
+          'Collection Accounts': 'Personal Debt'
+        };
+        
+        const firstDebtType = createFormData.debtTypes[0];
+        cleanFormData.source = debtTypeToSource[firstDebtType] || 'Personal Debt';
+      } else {
+        cleanFormData.source = {
+          secured: 'Secured Debt',
+          unsecured: 'Unsecured Debt'
+        }[createFormData.debtCategory] || 'Personal Debt';
+      }
+
+      // Add contact information
+      if (createFormData.email && createFormData.email.trim() !== '') {
+        cleanFormData.email = createFormData.email.trim();
+      }
+      if (createFormData.phone && createFormData.phone.trim() !== '') {
+        cleanFormData.phone = createFormData.phone.trim();
+      }
+      if (createFormData.alternatePhone && createFormData.alternatePhone.trim() !== '') {
+        cleanFormData.alternatePhone = createFormData.alternatePhone.trim();
+      }
+
+      // Add debt information
+      if (createFormData.totalDebtAmount && createFormData.totalDebtAmount !== '' && !isNaN(createFormData.totalDebtAmount)) {
+        cleanFormData.totalDebtAmount = parseFloat(createFormData.totalDebtAmount);
+      }
+      if (createFormData.numberOfCreditors && createFormData.numberOfCreditors !== '' && !isNaN(createFormData.numberOfCreditors)) {
+        cleanFormData.numberOfCreditors = parseInt(createFormData.numberOfCreditors, 10);
+      }
+      if (createFormData.monthlyDebtPayment && createFormData.monthlyDebtPayment !== '' && !isNaN(createFormData.monthlyDebtPayment)) {
+        cleanFormData.monthlyDebtPayment = parseFloat(createFormData.monthlyDebtPayment);
+      }
+      if (createFormData.creditScore && createFormData.creditScore !== '' && !isNaN(createFormData.creditScore)) {
+        cleanFormData.creditScore = parseInt(createFormData.creditScore, 10);
+      }
+      if (createFormData.creditScoreRange && createFormData.creditScoreRange !== '') {
+        cleanFormData.creditScoreRange = createFormData.creditScoreRange;
+      }
+
+      // Add address information
+      if (createFormData.address && createFormData.address.trim() !== '') {
+        cleanFormData.address = createFormData.address.trim();
+      }
+      if (createFormData.city && createFormData.city.trim() !== '') {
+        cleanFormData.city = createFormData.city.trim();
+      }
+      if (createFormData.state && createFormData.state.trim() !== '') {
+        cleanFormData.state = createFormData.state.trim();
+      }
+      if (createFormData.zipcode && createFormData.zipcode.trim() !== '') {
+        cleanFormData.zipcode = createFormData.zipcode.trim();
+      }
+
+      // Add notes
+      if (createFormData.notes && createFormData.notes.trim() !== '') {
+        cleanFormData.notes = createFormData.notes.trim();
+      }
+
+      console.log('Submitting clean form data:', cleanFormData);
+
+      const response = await axios.post('/api/leads', cleanFormData);
+      console.log('Agent2 Lead creation response:', response.data);
+
+      if (response.data && response.data.success) {
+        toast.success('Lead created and assigned successfully!');
+        
+        // Reset form
+        setCreateFormData({
+          name: '',
+          email: '',
+          phone: '',
+          alternatePhone: '',
+          debtCategory: 'unsecured',
+          debtTypes: [],
+          totalDebtAmount: '',
+          numberOfCreditors: '',
+          monthlyDebtPayment: '',
+          creditScore: '',
+          creditScoreRange: '',
+          address: '',
+          city: '',
+          state: '',
+          zipcode: '',
+          notes: ''
+        });
+        
+        // Clear form errors
+        setFormErrors({});
+        
+        // Close form and refresh leads
+        setShowCreateForm(false);
+        fetchLeads(1);
+      }
+    } catch (error) {
+      console.error('Agent2 Lead creation error:', error);
+      console.error('Error response data:', error.response?.data);
+      
+      const errorMessage = error.response?.data?.message || 'Failed to create lead';
+      toast.error(errorMessage);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   if (loading) {
     return <LoadingSpinner message="Loading leads..." />;
   }
@@ -694,6 +1002,13 @@ const Agent2Dashboard = () => {
           <h1 className="text-2xl font-bold text-gray-900">Lead Management</h1>
           <p className="text-gray-600">Follow up on leads and update their status</p>
         </div>
+        <button
+          onClick={() => setShowCreateForm(true)}
+          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+        >
+          <Plus className="h-4 w-4" />
+          Create Lead
+        </button>
       </div>
 
       {/* Today's Assigned Leads Summary for Agent2 */}
@@ -1926,6 +2241,348 @@ const Agent2Dashboard = () => {
                     onClick={() => setShowEditModal(false)}
                   >
                     Cancel
+                  </button>
+                </div>
+              </form>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Lead Form Modal */}
+      {showCreateForm && (
+        <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
+          <div className="relative top-10 mx-auto p-5 border w-full max-w-4xl shadow-lg rounded-md bg-white">
+            <div className="mt-3">
+              <div className="flex items-center justify-between mb-4">
+                <h3 className="text-lg font-medium text-gray-900">Create New Lead</h3>
+                <button
+                  onClick={() => setShowCreateForm(false)}
+                  className="text-gray-400 hover:text-gray-600"
+                >
+                  <XCircle className="h-6 w-6" />
+                </button>
+              </div>
+
+              <form onSubmit={handleCreateSubmit} className="space-y-6">
+                {/* Basic Information */}
+                <div className="space-y-4">
+                  <h4 className="text-md font-semibold text-gray-900 border-b border-gray-200 pb-2">Basic Information</h4>
+                  
+                  {/* Name */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Full Name *</label>
+                    <input
+                      type="text"
+                      name="name"
+                      required
+                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                      value={createFormData.name}
+                      onChange={handleCreateFormChange}
+                      placeholder="Enter full name"
+                    />
+                    {formErrors.name && <p className="mt-1 text-sm text-red-600">{formErrors.name}</p>}
+                  </div>
+
+                  {/* Email */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Email Address</label>
+                    <input
+                      type="email"
+                      name="email"
+                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                      value={createFormData.email}
+                      onChange={handleCreateFormChange}
+                      placeholder="Enter email address"
+                    />
+                    {formErrors.email && <p className="mt-1 text-sm text-red-600">{formErrors.email}</p>}
+                  </div>
+
+                  {/* Phone Numbers */}
+                  <div className="grid grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Primary Phone *</label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <span className="text-gray-500 sm:text-sm">+1</span>
+                        </div>
+                        <input
+                          type="tel"
+                          name="phone"
+                          required
+                          className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white ${
+                            formErrors.phone 
+                              ? 'border-red-300 focus:ring-red-500' 
+                              : 'border-gray-200 focus:ring-primary-500'
+                          }`}
+                          value={getCreateDisplayPhone(createFormData.phone)}
+                          onChange={handleCreatePhoneInputChange}
+                          placeholder="Enter 10 digits (e.g. 2345678901)"
+                          maxLength="10"
+                        />
+                      </div>
+                      {formErrors.phone && (
+                        <p className="mt-1 text-sm text-red-600">{formErrors.phone}</p>
+                      )}
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Alternate Phone</label>
+                      <div className="relative">
+                        <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                          <span className="text-gray-500 sm:text-sm">+1</span>
+                        </div>
+                        <input
+                          type="tel"
+                          name="alternatePhone"
+                          className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white ${
+                            formErrors.alternatePhone 
+                              ? 'border-red-300 focus:ring-red-500' 
+                              : 'border-gray-200 focus:ring-primary-500'
+                          }`}
+                          value={getCreateDisplayPhone(createFormData.alternatePhone)}
+                          onChange={handleCreatePhoneInputChange}
+                          placeholder="Enter 10 digits (optional)"
+                          maxLength="10"
+                        />
+                      </div>
+                      {formErrors.alternatePhone && (
+                        <p className="mt-1 text-sm text-red-600">{formErrors.alternatePhone}</p>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                {/* Debt Information */}
+                <div className="space-y-4">
+                  <h4 className="text-md font-semibold text-gray-900 border-b border-gray-200 pb-2">Debt Information</h4>
+                  
+                  {/* Debt Category */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Debt Category</label>
+                    <div className="flex space-x-4">
+                      <label className="flex items-center">
+                        <input
+                          type="radio"
+                          name="debtCategory"
+                          value="unsecured"
+                          checked={createFormData.debtCategory === 'unsecured'}
+                          onChange={handleCreateFormChange}
+                          className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300"
+                        />
+                        <span className="ml-2 text-sm font-medium text-gray-700">Unsecured Debt</span>
+                      </label>
+                      <label className="flex items-center">
+                        <input
+                          type="radio"
+                          name="debtCategory"
+                          value="secured"
+                          checked={createFormData.debtCategory === 'secured'}
+                          onChange={handleCreateFormChange}
+                          className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300"
+                        />
+                        <span className="ml-2 text-sm font-medium text-gray-700">Secured Debt</span>
+                      </label>
+                    </div>
+                  </div>
+
+                  {/* Debt Types */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-3">Select Debt Types</label>
+                    <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-4 bg-gray-50">
+                      {DEBT_TYPES_BY_CATEGORY[createFormData.debtCategory].map((type) => (
+                        <label key={type} className="flex items-center space-x-3 cursor-pointer">
+                          <input
+                            type="checkbox"
+                            checked={createFormData.debtTypes.includes(type)}
+                            onChange={() => handleCreateDebtTypeChange(type)}
+                            className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
+                          />
+                          <span className="text-sm text-gray-700">{type}</span>
+                        </label>
+                      ))}
+                    </div>
+                  </div>
+
+                  {/* Financial Details */}
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Total Debt Amount ($)</label>
+                      <input
+                        type="number"
+                        name="totalDebtAmount"
+                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                        value={createFormData.totalDebtAmount}
+                        onChange={handleCreateFormChange}
+                        placeholder="0"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Number of Creditors</label>
+                      <input
+                        type="number"
+                        name="numberOfCreditors"
+                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                        value={createFormData.numberOfCreditors}
+                        onChange={handleCreateFormChange}
+                        placeholder="0"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Monthly Payment ($)</label>
+                      <input
+                        type="number"
+                        name="monthlyDebtPayment"
+                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                        value={createFormData.monthlyDebtPayment}
+                        onChange={handleCreateFormChange}
+                        placeholder="0"
+                      />
+                    </div>
+                  </div>
+
+                  {/* Credit Information */}
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Credit Score</label>
+                      <input
+                        type="number"
+                        name="creditScore"
+                        min="300"
+                        max="850"
+                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                        value={createFormData.creditScore}
+                        onChange={handleCreateFormChange}
+                        placeholder="Enter credit score"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Credit Score Range</label>
+                      <select
+                        name="creditScoreRange"
+                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                        value={createFormData.creditScoreRange}
+                        onChange={handleCreateFormChange}
+                      >
+                        <option value="">Select credit score range</option>
+                        {CREDIT_SCORE_RANGES.map((range) => (
+                          <option key={range} value={range}>{range}</option>
+                        ))}
+                      </select>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Address Information */}
+                <div className="space-y-4">
+                  <h4 className="text-md font-semibold text-gray-900 border-b border-gray-200 pb-2">Address Information</h4>
+                  
+                  {/* Address */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Street Address</label>
+                    <input
+                      type="text"
+                      name="address"
+                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                      value={createFormData.address}
+                      onChange={handleCreateFormChange}
+                      placeholder="Enter street address"
+                    />
+                  </div>
+
+                  {/* City, State, Zipcode */}
+                  <div className="grid grid-cols-3 gap-4">
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">City</label>
+                      <input
+                        type="text"
+                        name="city"
+                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                        value={createFormData.city}
+                        onChange={handleCreateFormChange}
+                        placeholder="City"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">State</label>
+                      <input
+                        type="text"
+                        name="state"
+                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                        value={createFormData.state}
+                        onChange={handleCreateFormChange}
+                        placeholder="State"
+                      />
+                    </div>
+                    <div>
+                      <label className="block text-sm font-semibold text-gray-700 mb-2">Zipcode</label>
+                      <input
+                        type="text"
+                        name="zipcode"
+                        className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                        value={createFormData.zipcode}
+                        onChange={handleCreateFormChange}
+                        placeholder="Zipcode"
+                      />
+                    </div>
+                  </div>
+                </div>
+
+                {/* Additional Information */}
+                <div className="space-y-4">
+                  <h4 className="text-md font-semibold text-gray-900 border-b border-gray-200 pb-2">Additional Information</h4>
+                  
+                  {/* Notes */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Notes</label>
+                    <textarea
+                      name="notes"
+                      rows="4"
+                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white resize-vertical"
+                      value={createFormData.notes}
+                      onChange={handleCreateFormChange}
+                      placeholder="Additional notes about the lead..."
+                    />
+                  </div>
+
+                  {/* Requirements */}
+                  <div>
+                    <label className="block text-sm font-semibold text-gray-700 mb-2">Requirements</label>
+                    <textarea
+                      name="requirements"
+                      rows="4"
+                      className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white resize-vertical"
+                      value={createFormData.requirements}
+                      onChange={handleCreateFormChange}
+                      placeholder="Specific requirements or preferences..."
+                    />
+                  </div>
+                </div>
+
+                {/* Form Actions */}
+                <div className="flex justify-end space-x-3 pt-6 border-t border-gray-200">
+                  <button
+                    type="button"
+                    onClick={() => setShowCreateForm(false)}
+                    className="px-6 py-3 text-sm font-medium text-gray-700 bg-white border border-gray-300 rounded-lg shadow-sm hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 transition-all duration-200"
+                  >
+                    Cancel
+                  </button>
+                  <button
+                    type="submit"
+                    disabled={submitting}
+                    className="px-6 py-3 text-sm font-medium text-white bg-gradient-to-r from-primary-600 to-primary-700 border border-transparent rounded-lg shadow-sm hover:from-primary-700 hover:to-primary-800 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 flex items-center space-x-2"
+                  >
+                    {submitting ? (
+                      <>
+                        <LoadingSpinner size="small" />
+                        <span>Creating Lead...</span>
+                      </>
+                    ) : (
+                      <>
+                        <Plus className="h-4 w-4" />
+                        <span>Create Lead</span>
+                      </>
+                    )}
                   </button>
                 </div>
               </form>

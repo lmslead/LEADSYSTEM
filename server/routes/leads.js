@@ -1104,15 +1104,15 @@ router.get('/:id', protect, async (req, res) => {
 
 // @desc    Create new lead
 // @route   POST /api/leads
-// @access  Private (Agent1 only)
+// @access  Private (Agent1, Agent2, Admin)
 router.post('/', protect, createLeadValidation, handleValidationErrors, async (req, res) => {
   try {
     console.log('Create lead request body:', req.body);
     console.log('Create lead request user:', req.user ? req.user.role : 'No user');
     console.log('Create lead request user ID:', req.user ? req.user._id : 'No user ID');
     
-    // Check if user has permission (agent1 or admin)
-    if (req.user && !['agent1', 'admin'].includes(req.user.role)) {
+    // Check if user has permission (agent1, agent2, or admin)
+    if (req.user && !['agent1', 'agent2', 'admin'].includes(req.user.role)) {
       return res.status(403).json({
         success: false,
         message: `User role ${req.user.role} is not authorized to create leads`
@@ -1125,6 +1125,14 @@ router.post('/', protect, createLeadValidation, handleValidationErrors, async (r
       createdBy: req.user._id,
       organization: req.user.organization
     };
+
+    // Auto-assign to Agent2 if they are creating the lead
+    if (req.user.role === 'agent2') {
+      leadData.assignedTo = req.user._id;
+      leadData.assignedBy = req.user._id;
+      leadData.assignedAt = new Date();
+      console.log('Auto-assigning lead to Agent2:', req.user._id);
+    }
 
     console.log('Creating lead with data:', leadData);
 
@@ -1141,6 +1149,9 @@ router.post('/', protect, createLeadValidation, handleValidationErrors, async (r
     
     // Populate the created lead
     await lead.populate('createdBy', 'name email');
+    if (lead.assignedTo) {
+      await lead.populate('assignedTo', 'name email');
+    }
     if (lead.duplicateOf) {
       await lead.populate('duplicateOf', 'leadId name email phone');
     }
@@ -1150,6 +1161,7 @@ router.post('/', protect, createLeadValidation, handleValidationErrors, async (r
       const eventData = {
         lead: lead,
         createdBy: req.user.name,
+        assignedTo: lead.assignedTo ? lead.assignedTo.name : null,
         isDuplicate: lead.isDuplicate,
         duplicateInfo: lead.isDuplicate ? {
           duplicateOf: lead.duplicateOf,
@@ -1171,11 +1183,17 @@ router.post('/', protect, createLeadValidation, handleValidationErrors, async (r
       }
     }
 
+    const successMessage = req.user.role === 'agent2' 
+      ? (lead.isDuplicate 
+        ? `Lead created and auto-assigned to you, but marked as duplicate (${lead.duplicateReason} match found)`
+        : 'Lead created and auto-assigned to you successfully!')
+      : (lead.isDuplicate 
+        ? `Lead created successfully but marked as duplicate (${lead.duplicateReason} match found)`
+        : 'Lead created successfully');
+
     res.status(201).json({
       success: true,
-      message: lead.isDuplicate 
-        ? `Lead created successfully but marked as duplicate (${lead.duplicateReason} match found)`
-        : 'Lead created successfully',
+      message: successMessage,
       data: { 
         lead,
         isDuplicate: lead.isDuplicate,
