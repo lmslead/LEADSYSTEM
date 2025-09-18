@@ -283,9 +283,11 @@ const Agent2Dashboard = () => {
     
     // Reset filters and pagination
     setFilters({
-      status: 'all',
-      qualification: 'all',
-      search: ''
+      status: '',
+      category: '',
+      search: '',
+      duplicateStatus: '',
+      qualificationStatus: ''
     });
     setPagination(prev => ({ ...prev, page: 1 }));
     

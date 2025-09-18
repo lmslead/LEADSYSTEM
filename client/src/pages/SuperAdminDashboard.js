@@ -218,6 +218,30 @@ const SuperAdminDashboard = () => {
     // Reset to overview tab
     setActiveTab('overview');
     
+    // Reset all filters to default states
+    setLeadFilters({
+      search: '',
+      leadId: '',
+      startDate: '',
+      endDate: '',
+      status: '',
+      category: '',
+      qualificationStatus: '',
+      assignedTo: '',
+      duplicateStatus: '',
+      organization: ''
+    });
+    
+    setAdminFilters({
+      search: '',
+      organization: ''
+    });
+    
+    setAgentFilters({
+      search: '',
+      organization: ''
+    });
+    
     // Reset pagination
     setPagination(prev => ({ ...prev, page: 1 }));
     
