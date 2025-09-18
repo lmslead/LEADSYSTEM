@@ -350,59 +350,22 @@ const leadSchema = new mongoose.Schema({
   timestamps: true
 });
 
-// Indexes for better performance - Comprehensive indexing strategy
-leadSchema.index({ createdAt: -1 }); // Primary sort field
-leadSchema.index({ leadId: 1 }, { unique: true, sparse: true }); // Unique constraint
-leadSchema.index({ phone: 1 }); // Duplicate detection and search
-leadSchema.index({ email: 1 }); // Duplicate detection and search
-leadSchema.index({ isDuplicate: 1 }); // Duplicate filtering
-
-// Organization and user associations
+// Indexes for better performance
+leadSchema.index({ leadId: 1 }, { unique: true });
 leadSchema.index({ createdBy: 1 });
 leadSchema.index({ organization: 1 });
 leadSchema.index({ assignedTo: 1 });
 leadSchema.index({ assignedBy: 1 });
-
-// Status and categorization fields
 leadSchema.index({ status: 1 });
 leadSchema.index({ category: 1 });
 leadSchema.index({ qualificationStatus: 1 });
 leadSchema.index({ leadProgressStatus: 1 });
-leadSchema.index({ callDisposition: 1 });
-
-// Follow-up queries
+leadSchema.index({ createdAt: -1 });
 leadSchema.index({ followUpDate: 1 });
-
-// Compound indexes for common filter combinations
-leadSchema.index({ organization: 1, createdAt: -1 }); // Org filtered lists with sort
-leadSchema.index({ createdBy: 1, adminProcessed: 1, createdAt: -1 }); // Agent1 workflow
-leadSchema.index({ assignedTo: 1, adminProcessed: 1, createdAt: -1 }); // Agent2 workflow
-leadSchema.index({ qualificationStatus: 1, createdAt: -1 }); // Status filtering
-leadSchema.index({ isDuplicate: 1, adminProcessed: 1, createdAt: -1 }); // Duplicate handling
-leadSchema.index({ status: 1, createdAt: -1 }); // Status with date sort
-leadSchema.index({ category: 1, createdAt: -1 }); // Category filtering
-leadSchema.index({ leadProgressStatus: 1, createdAt: -1 }); // Progress status filtering
-
-// Stats queries optimization
-leadSchema.index({ organization: 1, qualificationStatus: 1 }); // Org stats by qualification
-leadSchema.index({ organization: 1, status: 1 }); // Org stats by status
-leadSchema.index({ organization: 1, leadProgressStatus: 1 }); // Conversion rate calculation
-leadSchema.index({ qualificationStatus: 1, leadProgressStatus: 1 }); // Combined stats
-
-// Time-based queries for dashboard stats
-leadSchema.index({ createdAt: 1, organization: 1 }); // Time range queries
-leadSchema.index({ createdAt: 1, qualificationStatus: 1 }); // Time-based qualification stats
-
-// Search optimization (text-based searches)
-leadSchema.index({ 
-  name: 'text', 
-  email: 'text', 
-  phone: 'text',
-  'organization.name': 'text'
-}, {
-  weights: { name: 10, email: 5, phone: 8 },
-  name: 'lead_search_index'
-});
+leadSchema.index({ email: 1 });
+leadSchema.index({ phone: 1 });
+leadSchema.index({ isDuplicate: 1 });
+leadSchema.index({ duplicateOf: 1 });
 
 // Function to generate unique lead ID using Eastern Time
 const generateLeadId = async function() {

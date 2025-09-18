@@ -5,7 +5,6 @@ const helmet = require('helmet');
 const rateLimit = require('express-rate-limit');
 const mongoSanitize = require('express-mongo-sanitize');
 const morgan = require('morgan');
-const compression = require('compression');
 const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
@@ -75,32 +74,18 @@ app.use(cors({
 // Rate limiting
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 10000, // limit each IP to 10000 requests per windowMs (increased for development/testing)
+  max: 1000, // limit each IP to 1000 requests per windowMs (increased for development)
   message: 'Too many requests from this IP, please try again later.'
 });
 app.use('/api/', limiter);
 
-// Auth rate limiting (more permissive for development/testing)
+// Auth rate limiting (more restrictive but reasonable for development)
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 500, // limit each IP to 500 requests per windowMs for auth (significantly increased for development)
+  max: 50, // limit each IP to 50 requests per windowMs for auth (increased)
   message: 'Too many authentication attempts, please try again later.'
 });
 app.use('/api/auth', authLimiter);
-
-// Enable gzip compression for all responses
-app.use(compression({
-  level: 6, // Good balance between compression ratio and CPU usage
-  threshold: 1024, // Only compress responses larger than 1KB
-  filter: (req, res) => {
-    // Don't compress already compressed responses
-    if (res.getHeader('Content-Encoding')) {
-      return false;
-    }
-    // Compress JSON and text responses
-    return compression.filter(req, res);
-  }
-}));
 
 // Body parsing middleware
 app.use(express.json({ limit: '10mb' }));
@@ -187,19 +172,10 @@ io.on('connection', (socket) => {
   });
 });
 
-// MongoDB connection with optimized settings
+// MongoDB connection
 const connectDB = async () => {
   try {
-    const conn = await mongoose.connect(process.env.MONGODB_URI, {
-      maxPoolSize: 20, // Maximum number of connections in the connection pool
-      minPoolSize: 5,  // Minimum number of connections in the connection pool  
-      serverSelectionTimeoutMS: 5000, // How long to try connecting before timing out
-      socketTimeoutMS: 45000, // How long before socket timeout
-      bufferCommands: false, // Disable mongoose buffering
-      maxIdleTimeMS: 30000, // Close connections after 30 seconds of inactivity
-      connectTimeoutMS: 10000, // Connection timeout
-      heartbeatFrequencyMS: 10000, // Heartbeat frequency
-    });
+    const conn = await mongoose.connect(process.env.MONGODB_URI);
     
     console.log(`MongoDB Connected: ${conn.connection.host}`);
     

@@ -13,7 +13,6 @@ const {
   getEasternStartOfDay,
   getEasternEndOfDay 
 } = require('../utils/timeFilters');
-const statsCache = require('../utils/statsCache');
 
 const EASTERN_TIMEZONE = 'America/New_York';
 
@@ -954,23 +953,18 @@ router.get('/', protect, [
     console.log('Final filter:', filter);
     console.log('User role:', req.user.role, 'User ID:', req.user._id);
 
-    // Get leads with pagination - OPTIMIZED with lean queries and selective fields
+    // Get leads with pagination
     const leads = await Lead.find(filter)
-      .select('leadId name email phone alternatePhone status qualificationStatus category ' +
-              'leadProgressStatus callDisposition createdAt updatedAt assignedAt ' +
-              'createdBy assignedTo assignedBy organization duplicateOf duplicateDetectedBy ' +
-              'isDuplicate duplicateReason adminProcessed followUpDate followUpTime ' +
-              'completionPercentage priority lastUpdatedBy lastUpdatedAt')
       .populate('createdBy', 'name email')
-      .populate('assignedTo', 'name email') 
+      .populate('updatedBy', 'name email')
+      .populate('assignedTo', 'name email')
       .populate('assignedBy', 'name email')
-      .populate('organization', 'name')
+      .populate('organization', 'name description')
       .populate('duplicateOf', 'leadId name email phone')
       .populate('duplicateDetectedBy', 'name email')
       .sort({ createdAt: -1 })
       .skip(skip)
-      .limit(limit)
-      .lean(); // Use lean for faster queries
+      .limit(limit);
 
     // Get total count for pagination
     const total = await Lead.countDocuments(filter);
@@ -1686,19 +1680,8 @@ router.post('/:id/unassign', protect, async (req, res) => {
 // @access  Private (All authenticated users)
 router.get('/dashboard/stats', protect, async (req, res) => {
   try {
-    const { role, _id: userId, organization: userOrg } = req.user;
+    const { role, _id: userId } = req.user;
     
-    // Check cache first
-    const cacheKey = statsCache.generateKey(userId, role, userOrg);
-    const cachedStats = statsCache.get(cacheKey);
-    
-    if (cachedStats) {
-      return res.status(200).json({
-        success: true,
-        data: { ...cachedStats, fromCache: true }
-      });
-    }
-
     let filter = {};
     
     // Apply filters based on user role
@@ -1825,9 +1808,6 @@ router.get('/dashboard/stats', protect, async (req, res) => {
       userRole: role,
       lastUpdated: formatEasternTime(getEasternNow())
     };
-
-    // Cache the response for 30 seconds
-    statsCache.set(cacheKey, response, 30000);
 
     res.status(200).json({
       success: true,
