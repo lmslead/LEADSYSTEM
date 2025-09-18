@@ -63,6 +63,22 @@ const Layout = ({ onDashboardRefresh }) => {
           onDashboardRefresh();
         }
       }
+    } else if (item.name === 'Today Leads') {
+      // Only refresh if we're already on the Today Leads page
+      if (isActive(item.href)) {
+        // Scroll to top using utility function
+        scrollToTop();
+        
+        toast.success('Today Leads refreshed!');
+        
+        // Trigger refresh for agent2 dashboard (Today Leads page)
+        triggerRefresh('agent2');
+        
+        // Also trigger callback if provided
+        if (onDashboardRefresh) {
+          onDashboardRefresh();
+        }
+      }
     }
   };
 
@@ -157,6 +173,8 @@ const Layout = ({ onDashboardRefresh }) => {
             {navItems.map((item) => {
               const Icon = item.icon;
               const isDashboardItem = item.name === 'Dashboard' || item.name === 'SuperAdmin';
+              const isTodayLeadsItem = item.name === 'Today Leads';
+              const isDoubleClickEnabled = isDashboardItem || isTodayLeadsItem;
               
               return (
                 <Link
@@ -168,8 +186,8 @@ const Layout = ({ onDashboardRefresh }) => {
                       : 'text-gray-600 hover:bg-gray-50 hover:text-gray-900'
                   } group flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors duration-200`}
                   onClick={() => setSidebarOpen(false)}
-                  onDoubleClick={() => isDashboardItem && handleDashboardDoubleClick(item)}
-                  title={isDashboardItem ? 'Double-click to refresh dashboard and scroll to top' : ''}
+                  onDoubleClick={() => isDoubleClickEnabled && handleDashboardDoubleClick(item)}
+                  title={isDoubleClickEnabled ? `Double-click to refresh ${item.name.toLowerCase()} and scroll to top` : ''}
                 >
                   <Icon
                     className={`${

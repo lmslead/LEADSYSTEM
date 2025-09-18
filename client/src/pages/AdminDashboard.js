@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { 
   BarChart3, 
  
@@ -34,6 +34,7 @@ import {
   getEasternEndOfDay,
   toEasternTime 
 } from '../utils/dateUtils';
+import { useDebounce, useDebouncedCallback } from '../hooks/useDebounce';
 
 const AdminDashboard = () => {
   const { socket } = useSocket();
@@ -56,7 +57,6 @@ const AdminDashboard = () => {
   });
 
   // Search functionality
-  const [searchTerm, setSearchTerm] = useState('');
   const [searchResults, setSearchResults] = useState([]);
 
   // Edit modal states
@@ -162,7 +162,7 @@ const AdminDashboard = () => {
 
 
 
-  const fetchStats = async (silent = false) => {
+  const fetchStats = useCallback(async (silent = false) => {
     if (!silent) {
       setRefreshing(true);
     }
@@ -185,7 +185,7 @@ const AdminDashboard = () => {
         setLoading(false);
       }
     }
-  };
+  }, []);
 
   // Fetch all leads for stats calculation (handles large datasets up to lakhs)
   const fetchAllLeadsForStats = useCallback(async () => {
@@ -299,28 +299,38 @@ const AdminDashboard = () => {
     }
   }, [pagination.page, pagination.limit, qualificationFilter, duplicateFilter, organizationFilter, dateFilter]);
 
-  // Initial data fetching
+  // Initial data fetching - separated to avoid circular dependencies
   useEffect(() => {
     const initializeData = async () => {
-      // Always fetch stats first to determine dataset size
-      await fetchStats();
-      await fetchOrganizations();
-      
-      // Only fetch all leads for smaller datasets (<= 10,000 records)
-      if (!stats || stats.totalLeads <= 10000) {
-        await fetchAllLeadsForStats();
-      } else {
-        console.log('Large dataset detected, skipping full leads fetch for performance');
-      }
-      
-      if (showLeadsSection) {
-        fetchLeads();
+      try {
+        // Always fetch stats first to determine dataset size
+        await fetchStats();
+        await fetchOrganizations();
+      } catch (error) {
+        console.error('Error initializing dashboard:', error);
       }
     };
 
     initializeData();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showLeadsSection, qualificationFilter, duplicateFilter, organizationFilter, dateFilter, fetchLeads, fetchAllLeadsForStats]);
+  }, [fetchStats]); // Include fetchStats as dependency
+
+  // Fetch all leads for stats when stats change
+  useEffect(() => {
+    if (stats && stats.totalLeads <= 10000) {
+      fetchAllLeadsForStats();
+    } else if (stats && stats.totalLeads > 10000) {
+      console.log('Large dataset detected, skipping full leads fetch for performance');
+      setAllLeadsForStats([]); // Clear the array for large datasets
+    }
+  }, [stats, fetchAllLeadsForStats]);
+
+  // Fetch leads when filters change or when leads section is shown - ONLY for initial load
+  useEffect(() => {
+    if (showLeadsSection) {
+      // Only fetch on initial load, not on filter changes (filters use debounced handlers)
+      fetchLeads();
+    }
+  }, [showLeadsSection, fetchLeads]); // Removed filter dependencies to prevent race conditions
 
   // Handle refresh functionality
   const handleDashboardRefresh = useCallback(() => {
@@ -328,11 +338,15 @@ const AdminDashboard = () => {
     scrollToTop();
     
     // Reset filters and pagination
-    setSearchTerm('');
+    setSearchInput('');
     setQualificationFilter('all');
     setDuplicateFilter('all');
     setOrganizationFilter('all');
-    setDateFilter('all');
+    setDateFilter({
+      startDate: '',
+      endDate: '',
+      filterType: 'all'
+    });
     setPagination(prev => ({ ...prev, page: 1 }));
     
     // Refetch data
@@ -393,7 +407,7 @@ const AdminDashboard = () => {
       const params = new URLSearchParams();
       
       // Add current filters as query parameters
-      if (searchTerm) params.append('search', searchTerm);
+      if (debouncedSearchTerm) params.append('search', debouncedSearchTerm);
       
       // Handle date filters based on type - send dateFilterType for backend processing
       if (dateFilter.filterType !== 'all') {
@@ -513,6 +527,13 @@ const AdminDashboard = () => {
     return isReddington;
   }, [user]);
 
+  // Filter change handler with proper debouncing - moved before socket handlers
+  const triggerFilteredFetch = useCallback(() => {
+    if (showLeadsSection) {
+      resetPaginationAndFetch();
+    }
+  }, [showLeadsSection, resetPaginationAndFetch]);
+
   // Socket.IO event listeners for real-time updates
   useEffect(() => {
     if (socket) {
@@ -533,8 +554,9 @@ const AdminDashboard = () => {
         if (!stats || stats.totalLeads <= 10000) {
           fetchAllLeadsForStats();
         }
+        // Use the debounced trigger to maintain current filters when refreshing leads
         if (showLeadsSection) {
-          fetchLeads(true);
+          triggerFilteredFetch();
         }
         setLastUpdated(getEasternNow());
       };
@@ -554,8 +576,9 @@ const AdminDashboard = () => {
         if (!stats || stats.totalLeads <= 10000) {
           fetchAllLeadsForStats();
         }
+        // Use the debounced trigger to maintain current filters when refreshing leads
         if (showLeadsSection) {
-          fetchLeads(true);
+          triggerFilteredFetch();
         }
         setLastUpdated(getEasternNow());
       };
@@ -575,8 +598,9 @@ const AdminDashboard = () => {
         if (!stats || stats.totalLeads <= 10000) {
           fetchAllLeadsForStats();
         }
+        // Use the debounced trigger to maintain current filters when refreshing leads
         if (showLeadsSection) {
-          fetchLeads(true);
+          triggerFilteredFetch();
         }
         setLastUpdated(getEasternNow());
       };
@@ -592,36 +616,78 @@ const AdminDashboard = () => {
         socket.off('leadDeleted', handleLeadDeleted);
       };
     }
-  }, [socket, showLeadsSection, fetchLeads, fetchAllLeadsForStats, stats, isReddingtonAdmin]);
+  }, [socket, showLeadsSection, fetchAllLeadsForStats, fetchStats, stats, isReddingtonAdmin, triggerFilteredFetch]);
 
-  // Search functionality
-  const handleSearch = useCallback((term) => {
-    setSearchTerm(term);
-    if (!term.trim()) {
+  // Search functionality with debouncing
+  const [searchInput, setSearchInput] = useState('');
+  const debouncedSearchTerm = useDebounce(searchInput, 300); // 300ms debounce
+
+  const handleSearchFilter = useCallback((filteredLeads) => {
+    if (!debouncedSearchTerm.trim()) {
       setSearchResults([]);
       return;
     }
 
-    const filtered = leads.filter(lead => {
-      const searchLower = term.toLowerCase();
-      return (
-        lead.name?.toLowerCase().includes(searchLower) ||
-        lead.phone?.includes(term) ||
-        lead.alternatePhone?.includes(term) ||
-        lead.email?.toLowerCase().includes(searchLower) ||
-        lead._id?.toLowerCase().includes(searchLower) ||
-        lead.leadId?.toLowerCase().includes(searchLower)
-      );
-    });
+    const searchLower = debouncedSearchTerm.toLowerCase();
+    const filtered = filteredLeads.filter(lead => (
+      lead.name?.toLowerCase().includes(searchLower) ||
+      lead.phone?.includes(debouncedSearchTerm) ||
+      lead.alternatePhone?.includes(debouncedSearchTerm) ||
+      lead.email?.toLowerCase().includes(searchLower) ||
+      lead._id?.toLowerCase().includes(searchLower) ||
+      lead.leadId?.toLowerCase().includes(searchLower)
+    ));
     setSearchResults(filtered);
-  }, [leads]);
+  }, [debouncedSearchTerm]);
 
-  // Update search results when leads change
-  useEffect(() => {
-    if (searchTerm.trim()) {
-      handleSearch(searchTerm);
+  // Memoized filter computation to avoid recalculating on every render
+  const memoizedFilteredLeads = useMemo(() => {
+    let result = leads;
+    
+    // Apply qualification filter
+    if (qualificationFilter !== 'all') {
+      result = result.filter(lead => lead.qualificationStatus === qualificationFilter);
     }
-  }, [leads, handleSearch, searchTerm]);
+    
+    // Apply duplicate filter
+    if (duplicateFilter !== 'all') {
+      if (duplicateFilter === 'duplicates') {
+        result = result.filter(lead => lead.isDuplicate === true);
+      } else if (duplicateFilter === 'non-duplicates') {
+        result = result.filter(lead => lead.isDuplicate !== true);
+      }
+    }
+    
+    // Apply organization filter
+    if (organizationFilter !== 'all') {
+      result = result.filter(lead => lead.organization?._id === organizationFilter || lead.organization === organizationFilter);
+    }
+    
+    return result;
+  }, [leads, qualificationFilter, duplicateFilter, organizationFilter]);
+
+  // Debounce the filter trigger
+  const debouncedTriggerFilteredFetch = useDebouncedCallback(triggerFilteredFetch, 500);
+
+  const handleQualificationFilterChange = useCallback((newValue) => {
+    setQualificationFilter(newValue);
+    debouncedTriggerFilteredFetch();
+  }, [debouncedTriggerFilteredFetch]);
+
+  const handleDuplicateFilterChange = useCallback((newValue) => {
+    setDuplicateFilter(newValue);
+    debouncedTriggerFilteredFetch();
+  }, [debouncedTriggerFilteredFetch]);
+
+  const handleOrganizationFilterChange = useCallback((newValue) => {
+    setOrganizationFilter(newValue);
+    debouncedTriggerFilteredFetch();
+  }, [debouncedTriggerFilteredFetch]);
+
+  // Update search results when leads or search term changes
+  useEffect(() => {
+    handleSearchFilter(memoizedFilteredLeads);
+  }, [memoizedFilteredLeads, handleSearchFilter, debouncedSearchTerm]);
 
   // Lead update functionality
   const handleEditToggle = () => {
@@ -687,8 +753,8 @@ const AdminDashboard = () => {
         
         // Refresh stats and search results
         fetchStats(true);
-        if (searchTerm.trim()) {
-          handleSearch(searchTerm);
+        if (debouncedSearchTerm.trim()) {
+          handleSearchFilter(memoizedFilteredLeads);
         }
       }
     } catch (error) {
@@ -867,9 +933,12 @@ const AdminDashboard = () => {
   const qualificationRate = parseFloat(realTimeStats.qualificationRate) || 0;
   const conversionRate = parseFloat(realTimeStats.conversionRate) || 0;
 
-  // Apply search filter first, then date filter
-  const baseLeads = searchTerm.trim() ? searchResults : leads;
-  const filteredLeads = getDateFilteredLeads(baseLeads);
+  // Apply search filter first, then date filter (only if no backend date filtering)
+  const baseLeads = debouncedSearchTerm.trim() ? searchResults : leads;
+  
+  // If date filter is applied on backend, don't apply client-side date filtering
+  const shouldApplyClientDateFilter = !dateFilter.filterType || dateFilter.filterType === 'all';
+  const filteredLeads = shouldApplyClientDateFilter ? getDateFilteredLeads(baseLeads) : baseLeads;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 py-10 px-2">
@@ -1000,15 +1069,15 @@ const AdminDashboard = () => {
                 <input
                   type="text"
                   placeholder="Search leads by name, phone, email, or lead ID..."
-                  value={searchTerm}
-                  onChange={(e) => handleSearch(e.target.value)}
+                  value={searchInput}
+                  onChange={(e) => setSearchInput(e.target.value)}
                   className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors"
                 />
               </div>
-              {searchTerm && (
+              {searchInput && (
                 <button
                   onClick={() => {
-                    setSearchTerm('');
+                    setSearchInput('');
                     setSearchResults([]);
                   }}
                   className="p-2 text-gray-400 hover:text-gray-600 transition-colors"
@@ -1017,9 +1086,9 @@ const AdminDashboard = () => {
                 </button>
               )}
             </div>
-            {searchTerm && (
+            {debouncedSearchTerm && (
               <p className="text-sm text-gray-600 mt-2">
-                Found {searchResults.length} lead{searchResults.length !== 1 ? 's' : ''} matching "{searchTerm}"
+                Found {searchResults.length} lead{searchResults.length !== 1 ? 's' : ''} matching "{debouncedSearchTerm}"
               </p>
             )}
           </div>
@@ -1104,10 +1173,7 @@ const AdminDashboard = () => {
               <span className="text-sm font-medium text-gray-700">Qualification:</span>
               <div className="flex gap-1">
                 <button
-                  onClick={() => {
-                    setQualificationFilter('all');
-                    resetPaginationAndFetch();
-                  }}
+                  onClick={() => handleQualificationFilterChange('all')}
                   className={`px-2 py-1 text-xs rounded transition-colors ${
                     qualificationFilter === 'all' 
                       ? 'bg-primary-600 text-white' 
@@ -1117,10 +1183,7 @@ const AdminDashboard = () => {
                   All
                 </button>
                 <button
-                  onClick={() => {
-                    setQualificationFilter('qualified');
-                    resetPaginationAndFetch();
-                  }}
+                  onClick={() => handleQualificationFilterChange('qualified')}
                   className={`px-2 py-1 text-xs rounded transition-colors ${
                     qualificationFilter === 'qualified' 
                       ? 'bg-green-600 text-white' 
@@ -1130,10 +1193,7 @@ const AdminDashboard = () => {
                   Qualified
                 </button>
                 <button
-                  onClick={() => {
-                    setQualificationFilter('disqualified');
-                    resetPaginationAndFetch();
-                  }}
+                  onClick={() => handleQualificationFilterChange('disqualified')}
                   className={`px-2 py-1 text-xs rounded transition-colors ${
                     qualificationFilter === 'disqualified' 
                       ? 'bg-red-600 text-white' 
@@ -1143,10 +1203,7 @@ const AdminDashboard = () => {
                   Disqualified
                 </button>
                 <button
-                  onClick={() => {
-                    setQualificationFilter('pending');
-                    resetPaginationAndFetch();
-                  }}
+                  onClick={() => handleQualificationFilterChange('pending')}
                   className={`px-2 py-1 text-xs rounded transition-colors ${
                     qualificationFilter === 'pending' 
                       ? 'bg-yellow-600 text-white' 
@@ -1163,10 +1220,7 @@ const AdminDashboard = () => {
               <span className="text-sm font-medium text-gray-700">Duplicates:</span>
               <div className="flex gap-1">
                 <button
-                  onClick={() => {
-                    setDuplicateFilter('all');
-                    resetPaginationAndFetch();
-                  }}
+                  onClick={() => handleDuplicateFilterChange('all')}
                   className={`px-2 py-1 text-xs rounded transition-colors ${
                     duplicateFilter === 'all' 
                       ? 'bg-primary-600 text-white' 
@@ -1176,10 +1230,7 @@ const AdminDashboard = () => {
                   All
                 </button>
                 <button
-                  onClick={() => {
-                    setDuplicateFilter('duplicates');
-                    resetPaginationAndFetch();
-                  }}
+                  onClick={() => handleDuplicateFilterChange('duplicates')}
                   className={`px-2 py-1 text-xs rounded transition-colors ${
                     duplicateFilter === 'duplicates' 
                       ? 'bg-yellow-600 text-white' 
@@ -1189,10 +1240,7 @@ const AdminDashboard = () => {
                   Dups Only
                 </button>
                 <button
-                  onClick={() => {
-                    setDuplicateFilter('non-duplicates');
-                    resetPaginationAndFetch();
-                  }}
+                  onClick={() => handleDuplicateFilterChange('non-duplicates')}
                   className={`px-2 py-1 text-xs rounded transition-colors ${
                     duplicateFilter === 'non-duplicates' 
                       ? 'bg-green-600 text-white' 
@@ -1209,10 +1257,7 @@ const AdminDashboard = () => {
               <span className="text-sm font-medium text-gray-700">Org:</span>
               <div className="flex gap-1 max-w-md overflow-x-auto">
                 <button
-                  onClick={() => {
-                    setOrganizationFilter('all');
-                    resetPaginationAndFetch();
-                  }}
+                  onClick={() => handleOrganizationFilterChange('all')}
                   className={`px-2 py-1 text-xs rounded whitespace-nowrap transition-colors ${
                     organizationFilter === 'all' 
                       ? 'bg-primary-600 text-white' 
@@ -1224,10 +1269,7 @@ const AdminDashboard = () => {
                 {organizations.slice(0, 3).map((org) => (
                   <button
                     key={org._id}
-                    onClick={() => {
-                      setOrganizationFilter(org._id);
-                      resetPaginationAndFetch();
-                    }}
+                    onClick={() => handleOrganizationFilterChange(org._id)}
                     className={`px-2 py-1 text-xs rounded whitespace-nowrap transition-colors ${
                       organizationFilter === org._id 
                         ? 'bg-blue-600 text-white' 
@@ -1241,10 +1283,7 @@ const AdminDashboard = () => {
                 {organizations.length > 3 && (
                   <select
                     value={organizationFilter}
-                    onChange={(e) => {
-                      setOrganizationFilter(e.target.value);
-                      resetPaginationAndFetch();
-                    }}
+                    onChange={(e) => handleOrganizationFilterChange(e.target.value)}
                     className="px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-primary-500"
                   >
                     <option value="all">All Orgs</option>
@@ -1274,7 +1313,7 @@ const AdminDashboard = () => {
           
           {/* Filter Summary */}
           <div className="text-xs text-gray-600 border-t border-gray-100 pt-2">
-            Showing {filteredLeads.length} of {leads.length} leads
+            Showing {filteredLeads.length} of {pagination.total || leads.length} leads
             {qualificationFilter !== 'all' && (
               <span className="ml-2 text-primary-600 font-medium">
                 • {qualificationFilter.charAt(0).toUpperCase() + qualificationFilter.slice(1)}
