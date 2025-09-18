@@ -72,7 +72,7 @@ const CREDIT_SCORE_RANGES = [
 const Agent2Dashboard = () => {
   const { user } = useAuth();
   const { socket } = useSocket();
-  const { registerRefreshCallback, unregisterRefreshCallback } = useRefresh();
+  const { registerRefreshCallback, unregisterRefreshCallback, registerFilterResetCallback, unregisterFilterResetCallback } = useRefresh();
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [selectedLead, setSelectedLead] = useState(null);
@@ -294,6 +294,52 @@ const Agent2Dashboard = () => {
     toast.success('Dashboard refreshed!');
   }, [fetchLeads]);
 
+  // Filter reset function
+  const handleFilterReset = useCallback(() => {
+    // Reset all filters to default values
+    setFilters({
+      status: '',
+      category: '',
+      search: '',
+      duplicateStatus: '',
+      qualificationStatus: ''
+    });
+    
+    // Close all modals and reset form states
+    setShowUpdateModal(false);
+    setShowViewModal(false);
+    setShowEditModal(false);
+    setShowCreateForm(false);
+    setSelectedLead(null);
+    
+    // Reset pagination
+    setPagination(prev => ({ ...prev, page: 1 }));
+    
+    // Reset create form data to initial state
+    setCreateFormData({
+      name: '',
+      email: '',
+      phone: '',
+      alternatePhone: '',
+      debtCategory: 'unsecured',
+      debtTypes: [],
+      totalDebtAmount: '',
+      numberOfCreditors: '',
+      monthlyDebtPayment: '',
+      creditScore: '',
+      creditScoreRange: '',
+      address: '',
+      city: '',
+      state: '',
+      zipcode: '',
+      notes: '',
+      requirements: ''
+    });
+    
+    // Refetch leads
+    fetchLeads(1);
+  }, [fetchLeads]);
+
   // Register refresh callback
   useEffect(() => {
     registerRefreshCallback('agent2', handleDashboardRefresh);
@@ -301,6 +347,14 @@ const Agent2Dashboard = () => {
       unregisterRefreshCallback('agent2');
     };
   }, [registerRefreshCallback, unregisterRefreshCallback, handleDashboardRefresh]);
+
+  // Register filter reset callback
+  useEffect(() => {
+    registerFilterResetCallback('agent2', handleFilterReset);
+    return () => {
+      unregisterFilterResetCallback('agent2');
+    };
+  }, [registerFilterResetCallback, unregisterFilterResetCallback, handleFilterReset]);
 
   // Reset pagination when filters change
   const resetPaginationAndFetch = useCallback(() => {

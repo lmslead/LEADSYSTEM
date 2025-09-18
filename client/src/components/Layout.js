@@ -21,7 +21,7 @@ import toast from 'react-hot-toast';
 const Layout = ({ onDashboardRefresh }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user, logout, loading } = useAuth();
-  const { triggerRefresh } = useRefresh();
+  const { triggerRefresh, triggerFilterReset } = useRefresh();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -37,26 +37,49 @@ const Layout = ({ onDashboardRefresh }) => {
 
   // Handle double-click on Dashboard to refresh
   const handleDashboardDoubleClick = (item) => {
-    if (item.name === 'Dashboard' || item.name === 'SuperAdmin') {
-      // Only refresh if we're already on the dashboard
+    if (item.name === 'Dashboard' || item.name === 'SuperAdmin' || item.name === 'Today Leads' || item.name === 'Leads') {
+      // Only refresh if we're already on the dashboard or today leads
       if (isActive(item.href)) {
         // Scroll to top using utility function
         scrollToTop();
         
-        toast.success('Dashboard refreshed!');
+        // Create appropriate toast message
+        let itemDisplayName = item.name;
+        if (item.name === 'SuperAdmin') itemDisplayName = 'Dashboard';
+        if (item.name === 'Leads') itemDisplayName = 'Leads';
         
-        // Determine dashboard type based on user role and current path
+        toast.success(`${itemDisplayName} refreshed and filters reset!`);
+        
+        // Determine dashboard type based on current route and user role
         let dashboardType = 'admin';
-        if (user.role === 'superadmin') {
-          dashboardType = 'superadmin';
-        } else if (user.role === 'agent1') {
-          dashboardType = 'agent1';
-        } else if (user.role === 'agent2') {
+        
+        // Check current route to determine which dashboard component is being used
+        if (location.pathname === '/leads') {
+          // /leads route always uses Agent2Dashboard component
           dashboardType = 'agent2';
+        } else if (location.pathname === '/superadmin') {
+          // /superadmin route uses SuperAdminDashboard
+          dashboardType = 'superadmin';
+        } else if (location.pathname === '/admin') {
+          // /admin route uses AdminDashboard
+          dashboardType = 'admin';
+        } else if (location.pathname === '/dashboard') {
+          // /dashboard route uses Agent1Dashboard
+          dashboardType = 'agent1';
+        } else {
+          // Fallback to user role-based detection
+          if (user.role === 'superadmin') {
+            dashboardType = 'superadmin';
+          } else if (user.role === 'agent1') {
+            dashboardType = 'agent1';
+          } else if (user.role === 'agent2') {
+            dashboardType = 'agent2';
+          }
         }
         
-        // Trigger refresh through context
+        // Trigger both refresh and filter reset through context
         triggerRefresh(dashboardType);
+        triggerFilterReset(dashboardType);
         
         // Also trigger callback if provided
         if (onDashboardRefresh) {
@@ -156,7 +179,7 @@ const Layout = ({ onDashboardRefresh }) => {
           <div className="space-y-1">
             {navItems.map((item) => {
               const Icon = item.icon;
-              const isDashboardItem = item.name === 'Dashboard' || item.name === 'SuperAdmin';
+              const isDashboardItem = item.name === 'Dashboard' || item.name === 'SuperAdmin' || item.name === 'Today Leads' || item.name === 'Leads';
               
               return (
                 <Link
@@ -169,7 +192,7 @@ const Layout = ({ onDashboardRefresh }) => {
                   } group flex items-center px-3 py-2 text-sm font-medium rounded-md transition-colors duration-200`}
                   onClick={() => setSidebarOpen(false)}
                   onDoubleClick={() => isDashboardItem && handleDashboardDoubleClick(item)}
-                  title={isDashboardItem ? 'Double-click to refresh dashboard and scroll to top' : ''}
+                  title={isDashboardItem ? 'Double-click to refresh and reset all filters' : ''}
                 >
                   <Icon
                     className={`${

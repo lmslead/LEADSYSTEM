@@ -28,7 +28,7 @@ import { formatEasternTimeForDisplay, formatEasternTime, getEasternNow } from '.
 
 const SuperAdminDashboard = () => {
   const { user } = useAuth();
-  const { registerRefreshCallback, unregisterRefreshCallback } = useRefresh();
+  const { registerRefreshCallback, unregisterRefreshCallback, registerFilterResetCallback, unregisterFilterResetCallback } = useRefresh();
   const [admins, setAdmins] = useState([]);
   const [agents, setAgents] = useState([]);
   const [organizations, setOrganizations] = useState([]);
@@ -229,6 +229,68 @@ const SuperAdminDashboard = () => {
     toast.success('Dashboard refreshed!');
   }, [fetchData, fetchLeads, activeTab]);
 
+  // Filter reset function
+  const handleFilterReset = useCallback(() => {
+    // Reset all filters to default values
+    setLeadFilters({
+      search: '',
+      leadId: '',
+      startDate: '',
+      endDate: '',
+      status: '',
+      category: '',
+      qualificationStatus: '',
+      assignedTo: '',
+      duplicateStatus: '',
+      organization: ''
+    });
+    
+    setAdminFilters({
+      search: '',
+      organization: ''
+    });
+    
+    setAgentFilters({
+      search: '',
+      organization: ''
+    });
+    
+    // Close all modals and reset form states
+    setShowLeadModal(false);
+    setShowEditLeadModal(false);
+    setSelectedLead(null);
+    
+    // Reset to overview tab
+    setActiveTab('overview');
+    
+    // Reset pagination
+    setPagination(prev => ({ ...prev, page: 1 }));
+    
+    // Reset lead form data
+    setLeadFormData({
+      name: '',
+      email: '',
+      phone: '',
+      alternatePhone: '',
+      debtCategory: 'unsecured',
+      debtTypes: [],
+      totalDebtAmount: '',
+      numberOfCreditors: '',
+      monthlyDebtPayment: '',
+      creditScore: '',
+      creditScoreRange: '',
+      address: '',
+      city: '',
+      state: '',
+      zipcode: '',
+      notes: '',
+      requirements: ''
+    });
+    
+    // Refetch data
+    fetchData();
+  }, [fetchData]);
+
   // Register refresh callback
   useEffect(() => {
     registerRefreshCallback('superadmin', handleDashboardRefresh);
@@ -236,6 +298,14 @@ const SuperAdminDashboard = () => {
       unregisterRefreshCallback('superadmin');
     };
   }, [registerRefreshCallback, unregisterRefreshCallback, handleDashboardRefresh]);
+
+  // Register filter reset callback
+  useEffect(() => {
+    registerFilterResetCallback('superadmin', handleFilterReset);
+    return () => {
+      unregisterFilterResetCallback('superadmin');
+    };
+  }, [registerFilterResetCallback, unregisterFilterResetCallback, handleFilterReset]);
 
   // Main effect to fetch initial data
   useEffect(() => {
