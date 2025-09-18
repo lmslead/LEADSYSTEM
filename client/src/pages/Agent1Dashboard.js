@@ -16,7 +16,7 @@ import { getEasternNow, formatEasternTimeForDisplay, getEasternStartOfDay, getEa
 
 const Agent1Dashboard = () => {
   const { user } = useAuth();
-  const { registerRefreshCallback, unregisterRefreshCallback } = useRefresh();
+  const { registerRefreshCallback, unregisterRefreshCallback, registerFilterResetCallback, unregisterFilterResetCallback } = useRefresh();
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
   const [showForm, setShowForm] = useState(false);
@@ -170,6 +170,43 @@ const Agent1Dashboard = () => {
     toast.success('Dashboard refreshed!');
   }, [fetchLeads]);
 
+  // Filter reset function (for Agent1, mainly resets form and modals)
+  const handleFilterReset = useCallback(() => {
+    // Reset form visibility and data
+    setShowForm(false);
+    setShowEditModal(false);
+    setShowAssignModal(false);
+    setEditingLead(null);
+    setAssigningLead(null);
+    
+    // Reset form data to initial state
+    setFormData({
+      name: '',
+      email: '',
+      phone: '',
+      alternatePhone: '',
+      debtCategory: 'unsecured',
+      debtTypes: [],
+      totalDebtAmount: '',
+      numberOfCreditors: '',
+      monthlyDebtPayment: '',
+      creditScore: '',
+      creditScoreRange: '',
+      address: '',
+      city: '',
+      state: '',
+      zipcode: '',
+      notes: '',
+      requirements: ''
+    });
+    
+    // Reset pagination to first page
+    setPagination(prev => ({ ...prev, page: 1 }));
+    
+    // Clear any form errors
+    setFormErrors({ phone: '', alternatePhone: '' });
+  }, []);
+
   // Register refresh callback
   useEffect(() => {
     registerRefreshCallback('agent1', handleDashboardRefresh);
@@ -177,6 +214,14 @@ const Agent1Dashboard = () => {
       unregisterRefreshCallback('agent1');
     };
   }, [registerRefreshCallback, unregisterRefreshCallback, handleDashboardRefresh]);
+
+  // Register filter reset callback
+  useEffect(() => {
+    registerFilterResetCallback('agent1', handleFilterReset);
+    return () => {
+      unregisterFilterResetCallback('agent1');
+    };
+  }, [registerFilterResetCallback, unregisterFilterResetCallback, handleFilterReset]);
 
   useEffect(() => {
     fetchLeads(pagination.page);

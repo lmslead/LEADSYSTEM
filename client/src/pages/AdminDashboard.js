@@ -38,7 +38,7 @@ import {
 const AdminDashboard = () => {
   const { socket } = useSocket();
   const { user } = useAuth();
-  const { registerRefreshCallback, unregisterRefreshCallback } = useRefresh();
+  const { registerRefreshCallback, unregisterRefreshCallback, registerFilterResetCallback, unregisterFilterResetCallback } = useRefresh();
   const [stats, setStats] = useState(null);
   const [leads, setLeads] = useState([]);
   const [allLeadsForStats, setAllLeadsForStats] = useState([]); // All leads for stats calculation
@@ -355,6 +355,26 @@ const AdminDashboard = () => {
     refreshData();
   }, [fetchStats, fetchAllLeadsForStats, fetchLeads, showLeadsSection]);
 
+  // Filter reset function
+  const handleFilterReset = useCallback(() => {
+    // Reset all filters to default values
+    setSearchTerm('');
+    setQualificationFilter('all');
+    setDuplicateFilter('all');
+    setOrganizationFilter('all');
+    setDateFilter({
+      startDate: '',
+      endDate: '',
+      filterType: 'all'
+    });
+    setPagination(prev => ({ ...prev, page: 1 }));
+    
+    // Refetch leads if section is shown
+    if (showLeadsSection) {
+      fetchLeads(false, 1);
+    }
+  }, [fetchLeads, showLeadsSection]);
+
   // Register refresh callback
   useEffect(() => {
     registerRefreshCallback('admin', handleDashboardRefresh);
@@ -362,6 +382,14 @@ const AdminDashboard = () => {
       unregisterRefreshCallback('admin');
     };
   }, [registerRefreshCallback, unregisterRefreshCallback, handleDashboardRefresh]);
+
+  // Register filter reset callback
+  useEffect(() => {
+    registerFilterResetCallback('admin', handleFilterReset);
+    return () => {
+      unregisterFilterResetCallback('admin');
+    };
+  }, [registerFilterResetCallback, unregisterFilterResetCallback, handleFilterReset]);
 
   // Pagination handler
   const handlePageChange = async (newPage) => {
