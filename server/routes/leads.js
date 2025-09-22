@@ -783,6 +783,11 @@ router.get('/', protect, [
     .trim()
     .isLength({ max: 100 })
     .withMessage('Search query cannot exceed 100 characters'),
+  query('leadId')
+    .optional()
+    .trim()
+    .isLength({ max: 50 })
+    .withMessage('Lead ID cannot exceed 50 characters'),
   query('organization')
     .optional()
     .isMongoId()
@@ -841,8 +846,15 @@ router.get('/', protect, [
         { name: { $regex: req.query.search, $options: 'i' } },
         { email: { $regex: req.query.search, $options: 'i' } },
         { company: { $regex: req.query.search, $options: 'i' } },
-        { phone: { $regex: req.query.search, $options: 'i' } }
+        { phone: { $regex: req.query.search, $options: 'i' } },
+        { leadId: { $regex: req.query.search, $options: 'i' } }
       ];
+    }
+
+    // Lead ID filter
+    if (req.query.leadId && req.query.leadId.trim()) {
+      const leadIdRegex = new RegExp(req.query.leadId.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      filter.leadId = leadIdRegex;
     }
 
     // Date filtering functionality

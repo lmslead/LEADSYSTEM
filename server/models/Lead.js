@@ -6,7 +6,18 @@ const leadSchema = new mongoose.Schema({
   leadId: {
     type: String,
     unique: true,
-    sparse: true // Allow multiple documents without leadId during creation
+    sparse: true, // Allow multiple documents without leadId during creation
+    validate: {
+      validator: function(v) {
+        if (!v) return true; // Allow empty during creation
+        // Accept both old and new formats during transition
+        const oldFormat = /^LEAD\d{8}$/; // Old: LEAD24091234
+        const oldOrgFormat = /^ORG\d{11}$/; // Previous ORG format: ORG25091900001
+        const newFormat = /^[A-Z]{3}\d{11}$/; // New: RED25092200001 (3 letters + 11 digits)
+        return oldFormat.test(v) || oldOrgFormat.test(v) || newFormat.test(v);
+      },
+      message: 'Invalid Lead ID format. Expected {ORG_PREFIX}{YYMMDD}{NNNNN} (e.g., RED25092200001) or legacy formats'
+    }
   },
   
   // Basic Information
@@ -368,12 +379,25 @@ leadSchema.index({ isDuplicate: 1 });
 leadSchema.index({ duplicateOf: 1 });
 
 // Function to generate unique lead ID using Eastern Time
+// New format: {ORG_PREFIX}{YYMMDD}{00000_SEQUENCE} (e.g., RED2509220001)
 const generateLeadId = async function() {
   const currentDate = getEasternNow();
-  const year = currentDate.getFullYear().toString().slice(-2);
-  const month = String(currentDate.getMonth() + 1).padStart(2, '0');
   
-  // Get count of leads created today in Eastern Time
+  // Get organization for prefix generation
+  if (!this.organization) {
+    throw new Error('Organization is required to generate Lead ID');
+  }
+  
+  // Import Organization model to get prefix
+  const Organization = require('./Organization');
+  const orgPrefix = await Organization.getLeadIdPrefixById(this.organization);
+  
+  // New format: {ORG_PREFIX}{YYMMDD}{NNNNN}
+  const year = currentDate.getFullYear().toString().slice(-2); // Last 2 digits: 25 for 2025
+  const month = String(currentDate.getMonth() + 1).padStart(2, '0'); // 2-digit month: 09
+  const day = String(currentDate.getDate()).padStart(2, '0'); // 2-digit day: 22
+  
+  // Get date boundaries for Eastern Time
   const startOfDay = getEasternStartOfDay(currentDate);
   const endOfDay = getEasternEndOfDay(currentDate);
   
@@ -381,14 +405,24 @@ const generateLeadId = async function() {
   const maxAttempts = 10;
   
   while (attempts < maxAttempts) {
+    // Count leads created today for THIS SPECIFIC ORGANIZATION in Eastern Time
     const todayLeadsCount = await this.constructor.countDocuments({
+      organization: this.organization, // Organization-specific counter
       createdAt: { $gte: startOfDay, $lte: endOfDay }
     });
     
-    const sequence = String(todayLeadsCount + 1 + attempts).padStart(4, '0');
-    const leadId = `LEAD${year}${month}${sequence}`;
+    // Lead number from 1-99999, padded to 5 digits (per organization per day)
+    const leadNumber = todayLeadsCount + 1 + attempts;
     
-    // Check if this leadId already exists
+    // Ensure we don't exceed 99999 leads per day per organization
+    if (leadNumber > 99999) {
+      throw new Error(`Daily lead limit exceeded for organization (99999) - ${orgPrefix}`);
+    }
+    
+    const sequence = String(leadNumber).padStart(5, '0'); // 5-digit sequence: 00001
+    const leadId = `${orgPrefix}${year}${month}${day}${sequence}`; // Final format: RED2509220001
+    
+    // Check for uniqueness (should be unique due to org-specific counter, but double-check)
     const existingLead = await this.constructor.findOne({ leadId });
     if (!existingLead) {
       return leadId;
@@ -397,9 +431,12 @@ const generateLeadId = async function() {
     attempts++;
   }
   
-  // Fallback: use timestamp-based sequence
-  const timestamp = Date.now().toString().slice(-4);
-  return `LEAD${year}${month}${timestamp}`;
+  // Fallback: use timestamp-based sequence if somehow duplicates occur
+  const timestamp = Date.now().toString().slice(-5); // Last 5 digits
+  const fallbackId = `${orgPrefix}${year}${month}${day}${timestamp}`;
+  
+  console.warn(`Using fallback Lead ID: ${fallbackId} for organization: ${orgPrefix}`);
+  return fallbackId;
 };
 
 // Pre-save middleware to generate leadId and calculate completion percentage and category

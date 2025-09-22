@@ -78,6 +78,36 @@ organizationSchema.methods.toJSON = function() {
   return organization;
 };
 
+// Method to generate organization prefix for Lead IDs
+organizationSchema.methods.getLeadIdPrefix = function() {
+  const orgName = this.name?.trim();
+  
+  if (!orgName) {
+    return 'ORG'; // Fallback prefix
+  }
+  
+  // Special case for REDDINGTON GLOBAL CONSULTANCY
+  if (orgName.toUpperCase() === 'REDDINGTON GLOBAL CONSULTANCY') {
+    return 'RED';
+  }
+  
+  // For all other organizations: first 3 letters in uppercase
+  // Extract only letters and take first 3
+  const letters = orgName.toUpperCase().replace(/[^A-Z]/g, '');
+  return letters.substring(0, 3).padEnd(3, 'X'); // Pad with X if less than 3 letters
+};
+
+// Static method to get prefix by organization ID
+organizationSchema.statics.getLeadIdPrefixById = async function(organizationId) {
+  try {
+    const organization = await this.findById(organizationId);
+    return organization ? organization.getLeadIdPrefix() : 'ORG';
+  } catch (error) {
+    console.error('Error getting organization prefix:', error);
+    return 'ORG'; // Fallback
+  }
+};
+
 // Static methods
 organizationSchema.statics.findActiveOrganizations = function() {
   return this.find({ isActive: true }).populate('createdBy', 'name email');
