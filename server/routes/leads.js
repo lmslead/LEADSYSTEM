@@ -348,10 +348,9 @@ const updateLeadValidation = [
 
 // @route   GET /api/leads/export
 // @desc    Export leads as CSV
-// @access  Protected (SuperAdmin and Main Organization Admin only)
+// @access  Protected (All authenticated users can export their accessible leads)
 router.get('/export', [
   protect,
-  authorize('superadmin', 'admin'),
   // Same validation as the main leads route
   query('page')
     .optional()
@@ -377,11 +376,11 @@ router.get('/export', [
     .withMessage('Invalid assigned agent ID'),
   query('status')
     .optional()
-    .isIn(['new', 'contacted', 'interested', 'not-interested', 'callback', 'follow-up', 'qualified', 'disqualified'])
+    .isIn(['new', 'interested', 'not-interested', 'successful', 'follow-up'])
     .withMessage('Invalid status filter'),
   query('category')
     .optional()
-    .isIn(['secured', 'unsecured', 'business', 'student', 'irs'])
+    .isIn(['hot', 'warm', 'cold'])
     .withMessage('Invalid category filter'),
   query('qualificationStatus')
     .optional()
@@ -397,7 +396,7 @@ router.get('/export', [
     .withMessage('Invalid organization ID'),
   query('dateFilterType')
     .optional()
-    .isIn(['today', 'week', 'month', 'custom'])
+    .isIn(['all', 'today', 'week', 'month', 'custom'])
     .withMessage('Invalid date filter type'),
   query('startDate')
     .optional()
@@ -425,167 +424,191 @@ router.get('/export', [
 ], async (req, res) => {
   try {
     const user = req.user;
-    const {
-      search,
-      leadId,
-      assignedTo,
-      status,
-      category,
-      qualificationStatus,
-      duplicateStatus,
-      organization,
-      dateFilterType,
-      startDate,
-      endDate
-    } = req.query;
 
     console.log(`Export request from ${user.role} user: ${user._id}`);
 
-    // Build base filter
-    let filter = {};
-
-    // Role-based filtering (same logic as main leads route)
-    if (user.role === 'superadmin') {
-      console.log('SuperAdmin filter applied: No restrictions');
-    } else if (user.role === 'admin') {
-      if (user.organization) {
-        await user.populate('organization');
-        console.log(`${user.organization.name} Admin filter applied: Can see all leads`);
-        
-        // Main organization admin can see all leads
-        if (user.organization.name === 'REDDINGTON GLOBAL CONSULTANCY') {
-          console.log('Admin filter applied: organization-restricted');
-          // No additional filter for main org admin
-        } else {
-          // Other organization admins can only see their own leads
-          filter.organization = user.organization._id;
-        }
-      } else {
-        return res.status(403).json({
-          success: false,
-          message: 'Admin user must be associated with an organization'
-        });
-      }
+    // Build filter object using EXACT same logic as main leads route
+    const filter = {};
+    
+    if (req.query.status) {
+      filter.status = req.query.status;
+    }
+    
+    if (req.query.category) {
+      filter.category = req.query.category;
     }
 
-    // Apply same filters as main leads route
-    if (search && search.trim()) {
-      const searchRegex = new RegExp(search.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-      filter.$or = [
-        { name: searchRegex },
-        { email: searchRegex },
-        { phone: searchRegex },
-        { leadId: searchRegex },
-        { notes: searchRegex }
-      ];
-    }
-
-    if (leadId && leadId.trim()) {
-      const leadIdRegex = new RegExp(leadId.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
-      filter.leadId = leadIdRegex;
-    }
-
-    if (assignedTo) {
-      filter.assignedTo = assignedTo;
-    }
-
-    if (status) {
-      filter.status = status;
-    }
-
-    if (category) {
-      filter.category = category;
-    }
-
-    if (qualificationStatus) {
+    if (req.query.qualificationStatus) {
       // Handle backward compatibility: 'disqualified' filter should include both 'disqualified' and 'unqualified'
-      if (qualificationStatus === 'disqualified') {
+      if (req.query.qualificationStatus === 'disqualified') {
         filter.qualificationStatus = { $in: ['disqualified', 'unqualified'] };
       } else {
-        filter.qualificationStatus = qualificationStatus;
+        filter.qualificationStatus = req.query.qualificationStatus;
       }
-    }
-
-    if (organization) {
-      filter.organization = organization;
-    }
-
-    // Date filtering
-    if (dateFilterType && dateFilterType !== 'all') {
-      let dateStart, dateEnd;
-
-      switch (dateFilterType) {
-        case 'today':
-          dateStart = getEasternStartOfDay();
-          dateEnd = getEasternEndOfDay();
-          break;
-        case 'week':
-          const weekStart = moment.tz(EASTERN_TIMEZONE).subtract(7, 'days').startOf('day');
-          dateStart = weekStart.toDate();
-          dateEnd = getEasternEndOfDay();
-          break;
-        case 'month':
-          const monthStart = moment.tz(EASTERN_TIMEZONE).subtract(30, 'days').startOf('day');
-          dateStart = monthStart.toDate();
-          dateEnd = getEasternEndOfDay();
-          break;
-        case 'custom':
-          if (startDate) {
-            dateStart = getEasternStartOfDay(new Date(startDate));
-          }
-          if (endDate) {
-            dateEnd = getEasternEndOfDay(new Date(endDate));
-          }
-          break;
-      }
-
-      if (dateStart || dateEnd) {
-        filter.createdAt = {};
-        if (dateStart) filter.createdAt.$gte = dateStart;
-        if (dateEnd) filter.createdAt.$lte = dateEnd;
-      }
-    }
-
-    // Handle direct startDate/endDate parameters (from SuperAdminDashboard)
-    if (startDate && endDate && !dateFilterType) {
-      const dateStart = getEasternStartOfDay(new Date(startDate));
-      const dateEnd = getEasternEndOfDay(new Date(endDate));
-      filter.createdAt = {
-        $gte: dateStart,
-        $lte: dateEnd
-      };
-    } else if (startDate && !dateFilterType) {
-      const dateStart = getEasternStartOfDay(new Date(startDate));
-      filter.createdAt = { $gte: dateStart };
-    } else if (endDate && !dateFilterType) {
-      const dateEnd = getEasternEndOfDay(new Date(endDate));
-      filter.createdAt = { $lte: dateEnd };
     }
 
     // Duplicate status filter
-    if (duplicateStatus) {
-      if (duplicateStatus === 'duplicates') {
+    if (req.query.duplicateStatus) {
+      if (req.query.duplicateStatus === 'duplicates') {
         filter.isDuplicate = true;
-      } else if (duplicateStatus === 'non-duplicates') {
+      } else if (req.query.duplicateStatus === 'non-duplicates') {
         filter.isDuplicate = { $ne: true };
       }
-      // 'all' case: no filter applied
+      // 'all' shows both duplicates and non-duplicates (no filter added)
     }
 
-    console.log('Export filter:', JSON.stringify(filter, null, 2));
+    // Search functionality
+    if (req.query.search) {
+      filter.$or = [
+        { name: { $regex: req.query.search, $options: 'i' } },
+        { email: { $regex: req.query.search, $options: 'i' } },
+        { company: { $regex: req.query.search, $options: 'i' } },
+        { phone: { $regex: req.query.search, $options: 'i' } },
+        { leadId: { $regex: req.query.search, $options: 'i' } }
+      ];
+    }
 
-    // Get all matching leads (no pagination for export)
+    // Lead ID filter
+    if (req.query.leadId && req.query.leadId.trim()) {
+      const leadIdRegex = new RegExp(req.query.leadId.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), 'i');
+      filter.leadId = leadIdRegex;
+    }
+
+    // Assigned to filter (for SuperAdmin dashboard)
+    if (req.query.assignedTo) {
+      filter.assignedTo = req.query.assignedTo;
+    }
+
+    // Date filtering functionality - EXACT same logic as main route
+    if (req.query.dateFilterType && req.query.dateFilterType !== 'all') {
+      const now = getEasternNow();
+      let startDate, endDate;
+
+      switch (req.query.dateFilterType) {
+        case 'today':
+          startDate = getEasternStartOfDay();
+          endDate = getEasternEndOfDay();
+          break;
+        case 'week':
+          startDate = new Date(now);
+          startDate.setDate(now.getDate() - 7);
+          startDate.setHours(0, 0, 0, 0);
+          endDate = getEasternEndOfDay();
+          break;
+        case 'month':
+          startDate = new Date(now);
+          startDate.setDate(now.getDate() - 30);
+          startDate.setHours(0, 0, 0, 0);
+          endDate = getEasternEndOfDay();
+          break;
+        case 'custom':
+          if (req.query.startDate && req.query.endDate) {
+            startDate = new Date(req.query.startDate);
+            startDate.setHours(0, 0, 0, 0);
+            endDate = new Date(req.query.endDate);
+            endDate.setHours(23, 59, 59, 999);
+          }
+          break;
+      }
+
+      if (startDate && endDate) {
+        filter.createdAt = {
+          $gte: startDate,
+          $lte: endDate
+        };
+      }
+    } else if (req.query.startDate || req.query.endDate) {
+      // Handle individual date parameters
+      const dateFilter = {};
+      if (req.query.startDate) {
+        const startDate = new Date(req.query.startDate);
+        startDate.setHours(0, 0, 0, 0);
+        dateFilter.$gte = startDate;
+      }
+      if (req.query.endDate) {
+        const endDate = new Date(req.query.endDate);
+        endDate.setHours(23, 59, 59, 999);
+        dateFilter.$lte = endDate;
+      }
+      filter.createdAt = dateFilter;
+    }
+
+    // Organization filter for SuperAdmin and REDDINGTON GLOBAL CONSULTANCY Admin
+    if (req.query.organization && ['superadmin'].includes(req.user.role)) {
+      filter.organization = req.query.organization;
+    } else if (req.query.organization && req.user.role === 'admin') {
+      // Check if admin is from REDDINGTON GLOBAL CONSULTANCY
+      const adminOrganization = await Organization.findById(req.user.organization);
+      if (adminOrganization && adminOrganization.name === 'REDDINGTON GLOBAL CONSULTANCY') {
+        filter.organization = req.query.organization;
+      }
+    }
+
+    // CRITICAL: Apply EXACT same role-based filtering as main leads route
+    if (req.user.role === 'agent1') {
+      filter.createdBy = req.user._id;
+      filter.adminProcessed = { $ne: true }; // Hide admin-processed leads
+      console.log('Agent1 export filter applied:', filter);
+    } else if (req.user.role === 'agent2') {
+      // Agent2 can see:
+      // 1. Leads assigned to them
+      // 2. Duplicate leads (for review)
+      filter.$or = [
+        { 
+          assignedTo: req.user._id,
+          adminProcessed: { $ne: true }
+        },
+        { 
+          isDuplicate: true,
+          adminProcessed: { $ne: true }
+        }
+      ];
+      console.log('Agent2 export filter applied:', filter);
+    } else if (req.user.role === 'admin') {
+      // Get admin's organization
+      const adminOrganization = await Organization.findById(req.user.organization);
+      
+      if (adminOrganization && adminOrganization.name === 'REDDINGTON GLOBAL CONSULTANCY') {
+        // REDDINGTON GLOBAL CONSULTANCY Admin can see all leads from all organizations
+        console.log('REDDINGTON GLOBAL CONSULTANCY Admin export filter applied: Can see all leads');
+        // No filter restriction - can see all leads
+      } else {
+        // Other organization admins can only see leads from their own organization
+        filter.organization = req.user.organization;
+        console.log('Regular Admin export filter applied: organization-restricted to', req.user.organization);
+      }
+    } else if (req.user.role === 'superadmin') {
+      // SuperAdmin can see all leads including duplicates from all organizations
+      // No additional filters needed beyond query parameters
+      console.log('SuperAdmin export filter applied: No restrictions');
+    }
+
+    console.log('Final export filter:', JSON.stringify(filter, null, 2));
+    console.log('User role:', req.user.role, 'User ID:', req.user._id);
+
+    // Get all matching leads (no pagination for export) - EXACT same query as main route
     const leads = await Lead.find(filter)
-      .populate('organization', 'name')
-      .populate('assignedTo', 'name')
-      .populate('assignedBy', 'name')
-      .populate('createdBy', 'name')
-      .populate('updatedBy', 'name')
-      .populate('duplicateDetectedBy', 'name')
-      .populate('duplicateOf', 'leadId name')
-      .sort({ createdAt: -1 });
+      .populate('createdBy', 'name email')
+      .populate('updatedBy', 'name email')
+      .populate('assignedTo', 'name email')
+      .populate('assignedBy', 'name email')
+      .populate('organization', 'name description')
+      .populate('duplicateOf', 'leadId name email phone')
+      .populate('duplicateDetectedBy', 'name email')
+      .sort({ createdAt: -1, _id: -1 }); // Added _id for consistent sorting
 
     console.log(`Export found ${leads.length} leads`);
+    
+    // Debug: Log first lead to check data structure
+    if (leads.length > 0) {
+      console.log('Sample lead structure:', {
+        leadId: leads[0].leadId,
+        name: leads[0].name,
+        duplicateOf: leads[0].duplicateOf,
+        organization: leads[0].organization?.name,
+        createdAt: leads[0].createdAt
+      });
+    }
 
     // Convert to CSV format - ALL FIELDS FROM MONGODB SCHEMA
     const csvHeader = [
@@ -650,76 +673,107 @@ router.get('/export', [
       'Updated Date (Eastern)'
     ].join(',');
 
-    const csvRows = leads.map(lead => {
+    const csvRows = leads.map((lead, index) => {
       const formatValue = (value) => {
-        if (value === null || value === undefined) return '';
-        if (typeof value === 'string' && (value.includes(',') || value.includes('"'))) {
-          return `"${value.replace(/"/g, '""')}"`;
+        try {
+          if (value === null || value === undefined) return '';
+          
+          // Handle objects (including MongoDB ObjectIds and populated objects)
+          if (typeof value === 'object' && value !== null) {
+            // If it's a populated object with name, use the name
+            if (value.name) return String(value.name);
+            // If it's a populated object with leadId, use the leadId
+            if (value.leadId) return String(value.leadId);
+            // If it's an ObjectId or similar, convert to string
+            if (value.toString && typeof value.toString === 'function') {
+              const stringified = value.toString();
+              // Avoid [object Object] outputs
+              if (stringified === '[object Object]') {
+                return JSON.stringify(value);
+              }
+              return String(stringified);
+            }
+            // Fallback for other objects
+            return JSON.stringify(value);
+          }
+          
+          // Convert to string first to handle all data types
+          const stringValue = String(value);
+          
+          // Escape CSV special characters
+          if (stringValue.includes(',') || stringValue.includes('"') || stringValue.includes('\n') || stringValue.includes('\r')) {
+            return `"${stringValue.replace(/"/g, '""')}"`;
+          }
+          
+          return stringValue;
+        } catch (error) {
+          console.error(`Error formatting value for lead ${index}:`, error, 'Value:', value);
+          return ''; // Return empty string on error
         }
-        return value;
       };
 
       const formatArray = (arr) => {
         if (!Array.isArray(arr)) return '';
-        return `"${arr.join('; ')}"`;
+        const formattedItems = arr.map(item => formatValue(item));
+        return `"${formattedItems.join('; ')}"`;
       };
       
       return [
-        formatValue(lead.leadId),
-        formatValue(lead.name),
-        formatValue(lead.email),
-        formatValue(lead.phone),
-        formatValue(lead.alternatePhone),
-        formatValue(lead.debtCategory),
-        formatArray(lead.debtTypes),
-        formatValue(lead.totalDebtAmount),
-        formatValue(lead.numberOfCreditors),
-        formatValue(lead.monthlyDebtPayment),
-        formatValue(lead.creditScore),
-        formatValue(lead.creditScoreRange),
-        formatValue(lead.budget),
-        formatValue(lead.source),
-        formatValue(lead.company),
-        formatValue(lead.jobTitle),
-        formatValue(lead.location),
-        formatValue(lead.requirements),
-        formatValue(lead.notes),
-        formatValue(lead.address),
-        formatValue(lead.city),
-        formatValue(lead.state),
-        formatValue(lead.zipcode),
-        formatValue(lead.category),
-        formatValue(lead.completionPercentage),
-        formatValue(lead.status),
-        formatValue(lead.leadStatus),
-        formatValue(lead.contactStatus),
-        formatValue(lead.qualificationOutcome),
-        formatValue(lead.callDisposition),
-        formatValue(lead.engagementOutcome),
-        formatValue(lead.disqualification),
-        formatValue(lead.leadProgressStatus),
-        formatValue(lead.qualificationStatus),
-        formatValue(lead.agent2LastAction),
-        formatValue(lead.lastUpdatedBy),
+        formatValue(lead.leadId || ''),
+        formatValue(lead.name || ''),
+        formatValue(lead.email || ''),
+        formatValue(lead.phone || ''),
+        formatValue(lead.alternatePhone || ''),
+        formatValue(lead.debtCategory || ''),
+        formatArray(lead.debtTypes || []),
+        formatValue(lead.totalDebtAmount || ''),
+        formatValue(lead.numberOfCreditors || ''),
+        formatValue(lead.monthlyDebtPayment || ''),
+        formatValue(lead.creditScore || ''),
+        formatValue(lead.creditScoreRange || ''),
+        formatValue(lead.budget || ''),
+        formatValue(lead.source || ''),
+        formatValue(lead.company || ''),
+        formatValue(lead.jobTitle || ''),
+        formatValue(lead.location || ''),
+        formatValue(lead.requirements || ''),
+        formatValue(lead.notes || ''),
+        formatValue(lead.address || ''),
+        formatValue(lead.city || ''),
+        formatValue(lead.state || ''),
+        formatValue(lead.zipcode || ''),
+        formatValue(lead.category || ''),
+        formatValue(lead.completionPercentage || ''),
+        formatValue(lead.status || ''),
+        formatValue(lead.leadStatus || ''),
+        formatValue(lead.contactStatus || ''),
+        formatValue(lead.qualificationOutcome || ''),
+        formatValue(lead.callDisposition || ''),
+        formatValue(lead.engagementOutcome || ''),
+        formatValue(lead.disqualification || ''),
+        formatValue(lead.leadProgressStatus || ''),
+        formatValue(lead.qualificationStatus || ''),
+        formatValue(lead.agent2LastAction || ''),
+        formatValue(lead.lastUpdatedBy || ''),
         formatValue(lead.lastUpdatedAt ? formatEasternTime(lead.lastUpdatedAt) : ''),
         formatValue(lead.followUpDate ? formatEasternTime(lead.followUpDate) : ''),
-        formatValue(lead.followUpTime),
-        formatValue(lead.followUpNotes),
+        formatValue(lead.followUpTime || ''),
+        formatValue(lead.followUpNotes || ''),
         formatValue(lead.createdBy?.name || ''),
         formatValue(lead.updatedBy?.name || ''),
         formatValue(lead.organization?.name || ''),
         formatValue(lead.assignedTo?.name || ''),
         formatValue(lead.assignedBy?.name || ''),
         formatValue(lead.assignedAt ? formatEasternTime(lead.assignedAt) : ''),
-        formatValue(lead.assignmentNotes),
-        formatValue(lead.priority),
+        formatValue(lead.assignmentNotes || ''),
+        formatValue(lead.priority || ''),
         formatValue(lead.convertedAt ? formatEasternTime(lead.convertedAt) : ''),
-        formatValue(lead.conversionValue),
+        formatValue(lead.conversionValue || ''),
         formatValue(lead.adminProcessed ? 'Yes' : 'No'),
         formatValue(lead.adminProcessedAt ? formatEasternTime(lead.adminProcessedAt) : ''),
         formatValue(lead.isDuplicate ? 'Yes' : 'No'),
-        formatValue(lead.duplicateOf),
-        formatValue(lead.duplicateReason),
+        formatValue(lead.duplicateOf ? (lead.duplicateOf.leadId || lead.duplicateOf.name || String(lead.duplicateOf._id || lead.duplicateOf)) : ''),
+        formatValue(lead.duplicateReason || ''),
         formatValue(lead.duplicateDetectedAt ? formatEasternTime(lead.duplicateDetectedAt) : ''),
         formatValue(lead.duplicateDetectedBy?.name || ''),
         formatValue(formatEasternTime(lead.createdAt)),
@@ -727,7 +781,18 @@ router.get('/export', [
       ].join(',');
     });
 
-    const csvContent = [csvHeader, ...csvRows].join('\n');
+    // Validate CSV rows before joining
+    const validCsvRows = csvRows.filter((row, index) => {
+      if (typeof row !== 'string' || row.trim() === '') {
+        console.warn(`Invalid CSV row at index ${index}:`, row);
+        return false;
+      }
+      return true;
+    });
+
+    console.log(`Generated ${validCsvRows.length} valid CSV rows out of ${csvRows.length} total rows`);
+
+    const csvContent = [csvHeader, ...validCsvRows].join('\n');
 
     // Set headers for CSV download
     const timestamp = formatEasternTime(getEasternNow()).replace(/[^0-9]/g, '');
@@ -974,7 +1039,7 @@ router.get('/', protect, [
       .populate('organization', 'name description')
       .populate('duplicateOf', 'leadId name email phone')
       .populate('duplicateDetectedBy', 'name email')
-      .sort({ createdAt: -1 })
+      .sort({ createdAt: -1, _id: -1 }) // Added _id for consistent sorting
       .skip(skip)
       .limit(limit);
 
