@@ -103,7 +103,10 @@ const AdminDashboard = () => {
     return `***-***-${cleaned.slice(-4)}`;
   };
 
-  // Date filtering utility functions using Eastern Time
+  // NOTE: Date filtering is now handled by the backend for better performance and accuracy
+  // The frontend only handles search filtering for immediate user feedback
+  // This function is kept for reference but is no longer used
+  /*
   const getDateFilteredLeads = (leadsToFilter) => {
     if (!dateFilter || dateFilter.filterType === 'all') {
       return leadsToFilter;
@@ -146,6 +149,7 @@ const AdminDashboard = () => {
       return leadDate.isBetween(startDate, endDate, null, '[]');
     });
   };
+  */
 
   const handleDateFilterChange = (filterType, startDate = '', endDate = '') => {
     setDateFilter({
@@ -332,7 +336,11 @@ const AdminDashboard = () => {
     setQualificationFilter('all');
     setDuplicateFilter('all');
     setOrganizationFilter('all');
-    setDateFilter('all');
+    setDateFilter({
+      startDate: '',
+      endDate: '',
+      filterType: 'all'
+    });
     setPagination(prev => ({ ...prev, page: 1 }));
     
     // Refetch data
@@ -764,12 +772,16 @@ const AdminDashboard = () => {
     const badges = {
       qualified: 'bg-green-100 text-green-800 border-green-200',
       'not-qualified': 'bg-red-100 text-red-800 border-red-200',
+      'disqualified': 'bg-red-100 text-red-800 border-red-200',
+      'unqualified': 'bg-red-100 text-red-800 border-red-200',
       pending: 'bg-yellow-100 text-yellow-800 border-yellow-200'
     };
 
     const icons = {
       qualified: CheckCircle,
       'not-qualified': XCircle,
+      'disqualified': XCircle,
+      'unqualified': XCircle,
       pending: Clock
     };
 
@@ -778,6 +790,8 @@ const AdminDashboard = () => {
     const labels = {
       qualified: 'Qualified',
       'not-qualified': 'Not - Qualified',
+      'disqualified': 'Not - Qualified', // Display as "Not - Qualified" for consistency
+      'unqualified': 'Not - Qualified', // Display as "Not - Qualified" for consistency
       pending: 'Pending'
     };
 
@@ -892,9 +906,9 @@ const AdminDashboard = () => {
   const qualificationRate = parseFloat(realTimeStats.qualificationRate) || 0;
   const conversionRate = parseFloat(realTimeStats.conversionRate) || 0;
 
-  // Apply search filter first, then date filter
-  const baseLeads = searchTerm.trim() ? searchResults : leads;
-  const filteredLeads = getDateFilteredLeads(baseLeads);
+  // Apply search filter only (backend handles date/qualification/duplicate/org filters)
+  // Search is client-side for immediate feedback as user types
+  const displayLeads = searchTerm.trim() ? searchResults : leads;
 
   return (
     <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 py-10 px-2">
@@ -1302,7 +1316,12 @@ const AdminDashboard = () => {
           
           {/* Filter Summary */}
           <div className="text-xs text-gray-600 border-t border-gray-100 pt-2">
-            Showing {filteredLeads.length} of {leads.length} leads
+            Showing {displayLeads.length} of {pagination.total} leads
+            {searchTerm && (
+              <span className="ml-2 text-purple-600 font-medium">
+                • Search: "{searchTerm}"
+              </span>
+            )}
             {qualificationFilter !== 'all' && (
               <span className="ml-2 text-primary-600 font-medium">
                 • {qualificationFilter.charAt(0).toUpperCase() + qualificationFilter.slice(1)}
@@ -1316,6 +1335,15 @@ const AdminDashboard = () => {
             {organizationFilter !== 'all' && (
               <span className="ml-2 text-blue-600 font-medium">
                 • {organizations.find(org => org._id === organizationFilter)?.name || 'Unknown'}
+              </span>
+            )}
+            {dateFilter.filterType !== 'all' && (
+              <span className="ml-2 text-green-600 font-medium">
+                • {dateFilter.filterType === 'today' ? 'Today' :
+                   dateFilter.filterType === 'week' ? '7 Days' :
+                   dateFilter.filterType === 'month' ? '30 Days' :
+                   dateFilter.filterType === 'custom' ? `Custom (${dateFilter.startDate} to ${dateFilter.endDate})` :
+                   'All Time'}
               </span>
             )}
           </div>
@@ -1333,7 +1361,7 @@ const AdminDashboard = () => {
             
             {/* Compact Card-Based Layout */}
             <div className="p-4 space-y-3 max-h-96 overflow-y-auto">
-              {filteredLeads.map((lead) => (
+              {displayLeads.map((lead) => (
                 <div key={lead.leadId || lead._id} className="bg-gray-50 rounded-lg border border-gray-200 hover:shadow-md transition-shadow duration-200">
                   <div className="p-3">
                     <div className="grid grid-cols-12 gap-3 items-center">
@@ -1493,7 +1521,7 @@ const AdminDashboard = () => {
                 </div>
               ))}
               
-              {filteredLeads.length === 0 && (
+              {displayLeads.length === 0 && (
                 <div className="bg-gray-50 rounded-lg border border-gray-200 p-8 text-center">
                   <div className="text-gray-500">
                     <div className="mx-auto h-12 w-12 text-gray-400 mb-4">

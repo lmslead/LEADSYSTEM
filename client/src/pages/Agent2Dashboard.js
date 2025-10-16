@@ -1297,11 +1297,11 @@ const Agent2Dashboard = () => {
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
                       lead.qualificationStatus === 'qualified' ? 'bg-green-100 text-green-800' :
-                      lead.qualificationStatus === 'not-qualified' ? 'bg-red-100 text-red-800' :
+                      (lead.qualificationStatus === 'not-qualified' || lead.qualificationStatus === 'disqualified' || lead.qualificationStatus === 'unqualified') ? 'bg-red-100 text-red-800' :
                       'bg-yellow-100 text-yellow-800'
                     }`}>
                       {lead.qualificationStatus === 'qualified' ? '✅ Qualified' :
-                       lead.qualificationStatus === 'not-qualified' ? '❌ Not - Qualified' :
+                       (lead.qualificationStatus === 'not-qualified' || lead.qualificationStatus === 'disqualified' || lead.qualificationStatus === 'unqualified') ? '❌ Not - Qualified' :
                        '⏳ Pending'}
                     </span>
                   </td>
@@ -1746,11 +1746,11 @@ const Agent2Dashboard = () => {
                             <span className="font-medium text-gray-700">Qualification:</span>{' '}
                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                               selectedLead.qualificationStatus === 'qualified' ? 'bg-green-100 text-green-800' :
-                              selectedLead.qualificationStatus === 'not-qualified' ? 'bg-red-100 text-red-800' :
+                              (selectedLead.qualificationStatus === 'not-qualified' || selectedLead.qualificationStatus === 'disqualified' || selectedLead.qualificationStatus === 'unqualified') ? 'bg-red-100 text-red-800' :
                               'bg-yellow-100 text-yellow-800'
                             }`}>
                               {selectedLead.qualificationStatus === 'qualified' ? 'Qualified' :
-                               selectedLead.qualificationStatus === 'not-qualified' ? 'Not - Qualified' :
+                               (selectedLead.qualificationStatus === 'not-qualified' || selectedLead.qualificationStatus === 'disqualified' || selectedLead.qualificationStatus === 'unqualified') ? 'Not - Qualified' :
                                'Pending'}
                             </span>
                           </div>

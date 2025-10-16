@@ -246,9 +246,11 @@ const leadSchema = new mongoose.Schema({
   },
   
   // Lead Qualification Status (for admin filtering)
+  // Supports backward compatibility: 'disqualified' and 'unqualified' from old data
+  // New leads should use 'not-qualified'
   qualificationStatus: {
     type: String,
-    enum: ['qualified', 'not-qualified', 'pending'],
+    enum: ['qualified', 'not-qualified', 'disqualified', 'unqualified', 'pending'],
     default: 'pending'
   },
   
@@ -554,7 +556,7 @@ leadSchema.statics.getStatistics = async function() {
           $sum: { $cond: [{ $eq: ['$qualificationStatus', 'qualified'] }, 1, 0] }
         },
         notQualifiedLeads: {
-          $sum: { $cond: [{ $in: ['$qualificationStatus', ['not-qualified', 'unqualified']] }, 1, 0] }
+          $sum: { $cond: [{ $in: ['$qualificationStatus', ['not-qualified', 'disqualified', 'unqualified']] }, 1, 0] }
         },
         pendingLeads: {
           $sum: { $cond: [{ $eq: ['$qualificationStatus', 'pending'] }, 1, 0] }

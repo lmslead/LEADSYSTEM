@@ -431,6 +431,28 @@ router.get('/export', [
     // Build filter object using EXACT same logic as main leads route
     const filter = {};
     
+    // IMPORTANT: Apply organization filter FIRST for non-REDDINGTON admins
+    // This ensures all subsequent filters work within the correct organization scope
+    if (req.user.role === 'admin') {
+      const adminOrganization = await Organization.findById(req.user.organization);
+      
+      if (adminOrganization && adminOrganization.name === 'REDDINGTON GLOBAL CONSULTANCY') {
+        // REDDINGTON GLOBAL CONSULTANCY Admin can filter by organization
+        if (req.query.organization) {
+          filter.organization = req.query.organization;
+        }
+        // If no organization filter specified, they can see all organizations
+      } else {
+        // Other organization admins can ONLY see leads from their own organization
+        // This restriction is applied FIRST and cannot be overridden by query params
+        filter.organization = req.user.organization;
+        console.log('Export - Non-REDDINGTON Admin: Restricting to organization', req.user.organization);
+      }
+    } else if (req.user.role === 'superadmin' && req.query.organization) {
+      // SuperAdmin can filter by organization if specified
+      filter.organization = req.query.organization;
+    }
+    
     if (req.query.status) {
       filter.status = req.query.status;
     }
@@ -504,10 +526,15 @@ router.get('/export', [
           break;
         case 'custom':
           if (req.query.startDate && req.query.endDate) {
-            startDate = new Date(req.query.startDate);
-            startDate.setHours(0, 0, 0, 0);
-            endDate = new Date(req.query.endDate);
-            endDate.setHours(23, 59, 59, 999);
+            // CRITICAL: Parse dates as UTC to match MongoDB Compass behavior
+            // Input format: "YYYY-MM-DD" from frontend date picker
+            // MongoDB Compass uses: ISODate("2025-10-08T00:00:00Z")
+            // We need to match that exact format for consistency
+            startDate = new Date(req.query.startDate + 'T00:00:00Z');
+            endDate = new Date(req.query.endDate + 'T23:59:59.999Z');
+            
+            console.log(`Export Custom date filter: ${req.query.startDate} to ${req.query.endDate}`);
+            console.log(`Export Converted to UTC: ${startDate.toISOString()} to ${endDate.toISOString()}`);
           }
           break;
       }
@@ -519,31 +546,24 @@ router.get('/export', [
         };
       }
     } else if (req.query.startDate || req.query.endDate) {
-      // Handle individual date parameters
+      // Handle individual date parameters (fallback for backwards compatibility)
+      // CRITICAL: Parse dates as UTC to match MongoDB Compass behavior
       const dateFilter = {};
       if (req.query.startDate) {
-        const startDate = new Date(req.query.startDate);
-        startDate.setHours(0, 0, 0, 0);
+        const startDate = new Date(req.query.startDate + 'T00:00:00Z');
         dateFilter.$gte = startDate;
+        console.log(`Export Individual startDate filter: ${startDate.toISOString()}`);
       }
       if (req.query.endDate) {
-        const endDate = new Date(req.query.endDate);
-        endDate.setHours(23, 59, 59, 999);
+        const endDate = new Date(req.query.endDate + 'T23:59:59.999Z');
         dateFilter.$lte = endDate;
+        console.log(`Export Individual endDate filter: ${endDate.toISOString()}`);
       }
       filter.createdAt = dateFilter;
     }
 
-    // Organization filter for SuperAdmin and REDDINGTON GLOBAL CONSULTANCY Admin
-    if (req.query.organization && ['superadmin'].includes(req.user.role)) {
-      filter.organization = req.query.organization;
-    } else if (req.query.organization && req.user.role === 'admin') {
-      // Check if admin is from REDDINGTON GLOBAL CONSULTANCY
-      const adminOrganization = await Organization.findById(req.user.organization);
-      if (adminOrganization && adminOrganization.name === 'REDDINGTON GLOBAL CONSULTANCY') {
-        filter.organization = req.query.organization;
-      }
-    }
+    // Organization filter is now applied at the top of the filter building process
+    // This section has been moved to ensure proper filter precedence
 
     // CRITICAL: Apply EXACT same role-based filtering as main leads route
     if (req.user.role === 'agent1') {
@@ -578,18 +598,9 @@ router.get('/export', [
       ];
       console.log('Agent2 export filter applied:', filter);
     } else if (req.user.role === 'admin') {
-      // Get admin's organization
-      const adminOrganization = await Organization.findById(req.user.organization);
-      
-      if (adminOrganization && adminOrganization.name === 'REDDINGTON GLOBAL CONSULTANCY') {
-        // REDDINGTON GLOBAL CONSULTANCY Admin can see all leads from all organizations
-        console.log('REDDINGTON GLOBAL CONSULTANCY Admin export filter applied: Can see all leads');
-        // No filter restriction - can see all leads
-      } else {
-        // Other organization admins can only see leads from their own organization
-        filter.organization = req.user.organization;
-        console.log('Regular Admin export filter applied: organization-restricted to', req.user.organization);
-      }
+      // Admin organization filtering is now handled at the top of filter building
+      // No additional filtering needed here - organization filter already applied
+      console.log('Admin export filter applied: organization already set at top of filter chain');
     } else if (req.user.role === 'superadmin') {
       // SuperAdmin can see all leads including duplicates from all organizations
       // No additional filters needed beyond query parameters
@@ -891,6 +902,28 @@ router.get('/', protect, [
     // Build filter object
     const filter = {};
     
+    // IMPORTANT: Apply organization filter FIRST for non-REDDINGTON admins
+    // This ensures all subsequent filters work within the correct organization scope
+    if (req.user.role === 'admin') {
+      const adminOrganization = await Organization.findById(req.user.organization);
+      
+      if (adminOrganization && adminOrganization.name === 'REDDINGTON GLOBAL CONSULTANCY') {
+        // REDDINGTON GLOBAL CONSULTANCY Admin can filter by organization
+        if (req.query.organization) {
+          filter.organization = req.query.organization;
+        }
+        // If no organization filter specified, they can see all organizations
+      } else {
+        // Other organization admins can ONLY see leads from their own organization
+        // This restriction is applied FIRST and cannot be overridden by query params
+        filter.organization = req.user.organization;
+        console.log('Non-REDDINGTON Admin: Restricting to organization', req.user.organization);
+      }
+    } else if (req.user.role === 'superadmin' && req.query.organization) {
+      // SuperAdmin can filter by organization if specified
+      filter.organization = req.query.organization;
+    }
+    
     if (req.query.status) {
       filter.status = req.query.status;
     }
@@ -959,10 +992,15 @@ router.get('/', protect, [
           break;
         case 'custom':
           if (req.query.startDate && req.query.endDate) {
-            startDate = new Date(req.query.startDate);
-            startDate.setHours(0, 0, 0, 0);
-            endDate = new Date(req.query.endDate);
-            endDate.setHours(23, 59, 59, 999);
+            // CRITICAL: Parse dates as UTC to match MongoDB Compass behavior
+            // Input format: "YYYY-MM-DD" from frontend date picker
+            // MongoDB Compass uses: ISODate("2025-10-08T00:00:00Z")
+            // We need to match that exact format for consistency
+            startDate = new Date(req.query.startDate + 'T00:00:00Z');
+            endDate = new Date(req.query.endDate + 'T23:59:59.999Z');
+            
+            console.log(`Main API Custom date filter: ${req.query.startDate} to ${req.query.endDate}`);
+            console.log(`Main API Converted to UTC: ${startDate.toISOString()} to ${endDate.toISOString()}`);
           }
           break;
       }
@@ -974,31 +1012,24 @@ router.get('/', protect, [
         };
       }
     } else if (req.query.startDate || req.query.endDate) {
-      // Handle individual date parameters
+      // Handle individual date parameters (fallback for backwards compatibility)
+      // CRITICAL: Parse dates as UTC to match MongoDB Compass behavior
       const dateFilter = {};
       if (req.query.startDate) {
-        const startDate = new Date(req.query.startDate);
-        startDate.setHours(0, 0, 0, 0);
+        const startDate = new Date(req.query.startDate + 'T00:00:00Z');
         dateFilter.$gte = startDate;
+        console.log(`Main API Individual startDate filter: ${startDate.toISOString()}`);
       }
       if (req.query.endDate) {
-        const endDate = new Date(req.query.endDate);
-        endDate.setHours(23, 59, 59, 999);
+        const endDate = new Date(req.query.endDate + 'T23:59:59.999Z');
         dateFilter.$lte = endDate;
+        console.log(`Main API Individual endDate filter: ${endDate.toISOString()}`);
       }
       filter.createdAt = dateFilter;
     }
 
-    // Organization filter for SuperAdmin and REDDINGTON GLOBAL CONSULTANCY Admin
-    if (req.query.organization && ['superadmin'].includes(req.user.role)) {
-      filter.organization = req.query.organization;
-    } else if (req.query.organization && req.user.role === 'admin') {
-      // Check if admin is from REDDINGTON GLOBAL CONSULTANCY
-      const adminOrganization = await Organization.findById(req.user.organization);
-      if (adminOrganization && adminOrganization.name === 'REDDINGTON GLOBAL CONSULTANCY') {
-        filter.organization = req.query.organization;
-      }
-    }
+    // Organization filter is now applied at the top of the filter building process
+    // This section has been moved to ensure proper filter precedence
 
     // Role-based filtering
     if (req.user.role === 'agent1') {
@@ -1033,19 +1064,9 @@ router.get('/', protect, [
       ];
       console.log('Agent2 filter applied:', filter);
     } else if (req.user.role === 'admin') {
-      // Get admin's organization
-      const adminOrganization = await Organization.findById(req.user.organization);
-      
-      if (adminOrganization && adminOrganization.name === 'REDDINGTON GLOBAL CONSULTANCY') {
-        // REDDINGTON GLOBAL CONSULTANCY Admin can see all leads from all organizations
-        console.log('REDDINGTON GLOBAL CONSULTANCY Admin filter applied: Can see all leads');
-        // No filter restriction - can see all leads
-      } else {
-        // Other organization admins can only see leads from their own organization
-        filter.organization = req.user.organization;
-        console.log('Regular Admin filter applied: organization-restricted to', req.user.organization);
-      }
-      console.log('Admin filter applied: organization-restricted');
+      // Admin organization filtering is now handled at the top of filter building
+      // No additional filtering needed here - organization filter already applied
+      console.log('Admin filter applied: organization already set at top of filter chain');
     } else if (req.user.role === 'superadmin') {
       // SuperAdmin can see all leads including duplicates from all organizations
       // No additional filters needed beyond query parameters

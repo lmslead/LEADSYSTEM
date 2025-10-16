@@ -22,19 +22,29 @@ const toEasternTime = (date) => {
 
 /**
  * Get start of day in Eastern Time (12:00 AM EST/EDT)
- * @param {Date} date - Base date (optional, defaults to today)
+ * @param {Date|string} date - Base date (optional, defaults to today)
  * @returns {Date} Start of day in Eastern Time
  */
 const getEasternStartOfDay = (date = new Date()) => {
+  // If date is a string (e.g., "2025-10-08"), parse it in Eastern timezone
+  // to avoid local timezone interpretation issues
+  if (typeof date === 'string') {
+    return moment.tz(date, EASTERN_TIMEZONE).startOf('day').toDate();
+  }
   return moment.tz(date, EASTERN_TIMEZONE).startOf('day').toDate();
 };
 
 /**
  * Get end of day in Eastern Time (11:59:59.999 PM EST/EDT)
- * @param {Date} date - Base date (optional, defaults to today)
+ * @param {Date|string} date - Base date (optional, defaults to today)
  * @returns {Date} End of day in Eastern Time
  */
 const getEasternEndOfDay = (date = new Date()) => {
+  // If date is a string (e.g., "2025-10-15"), parse it in Eastern timezone
+  // to avoid local timezone interpretation issues
+  if (typeof date === 'string') {
+    return moment.tz(date, EASTERN_TIMEZONE).endOf('day').toDate();
+  }
   return moment.tz(date, EASTERN_TIMEZONE).endOf('day').toDate();
 };
 
