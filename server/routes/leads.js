@@ -229,7 +229,7 @@ const updateLeadValidation = [
     .withMessage('Invalid status'),
   body('leadStatus')
     .optional({ nullable: true, checkFalsy: true })
-    .isIn(['Warm Transfer – Pre-Qualified', 'Cold Transfer – Disqualified', 'From Internal Dept.', 'Test / Training Call'])
+    .isIn(['Warm Transfer – Pre-Qualified', 'Cold Transfer – Not - Qualified', 'From Internal Dept.', 'Test / Training Call'])
     .withMessage('Invalid lead status'),
   body('contactStatus')
     .optional({ nullable: true, checkFalsy: true })
@@ -238,9 +238,9 @@ const updateLeadValidation = [
   body('qualificationOutcome')
     .optional({ nullable: true, checkFalsy: true })
     .isIn([
-      'Qualified – Meets Criteria', 'Pre-Qualified – Docs Needed', 'Disqualified – Debt Too Low',
-      'Disqualified – Secured Debt Only', 'Disqualified – Non-Service State', 'Disqualified – No Hardship',
-      'Disqualified – Active with Competitor'
+      'Qualified – Meets Criteria', 'Pre-Qualified – Docs Needed', 'Not - Qualified – Debt Too Low',
+      'Not - Qualified – Secured Debt Only', 'Not - Qualified – Non-Service State', 'Not - Qualified – No Hardship',
+      'Not - Qualified – Active with Competitor'
     ])
     .withMessage('Invalid qualification outcome'),
   body('callDisposition')
@@ -308,23 +308,24 @@ const updateLeadValidation = [
       if (!value || value.trim() === '') return true; // Allow empty values
       
       const allowedStatuses = [
-        'Appointment Scheduled',
-        'Immediate Enrollment', 
-        'Info Provided – Awaiting Decision',
-        'Nurture – Not Ready',
-        'Qualified – Meets Criteria',
-        'Disqualified – Debt Too Low',
-        'Disqualified – Secured Debt Only',
-        'Disqualified – Non-Service State',
-        'Disqualified – Active with Competitor',
-        'Disqualified - unacceptable creditors',
+        'SALE',
         'Callback Needed',
-        'Hung Up',
+        'Existing Client',
+        'Unacceptable Creditors',
+        'Not Serviceable State',
+        'Sale Long Play',
+        'DO NOT CALL - Litigator',
+        'DO NOT CALL',
+        'Hang-up',
         'Not Interested',
-        'DNC (Do Not Contact)'
+        'No Answer',
+        'AIP Client',
+        'Not Qualified',
+        'Affordability',
+        'Others'
       ];
       
-      // Allow predefined statuses or any custom string (for "Others" option)
+      // Allow predefined statuses or any custom string (for "Others" option and backward compatibility)
       if (allowedStatuses.includes(value) || typeof value === 'string') {
         return true;
       }
@@ -384,7 +385,7 @@ router.get('/export', [
     .withMessage('Invalid category filter'),
   query('qualificationStatus')
     .optional()
-    .isIn(['qualified', 'disqualified', 'pending'])
+    .isIn(['qualified', 'not-qualified', 'pending'])
     .withMessage('Invalid qualification status filter'),
   query('duplicateStatus')
     .optional()
@@ -439,9 +440,9 @@ router.get('/export', [
     }
 
     if (req.query.qualificationStatus) {
-      // Handle backward compatibility: 'disqualified' filter should include both 'disqualified' and 'unqualified'
-      if (req.query.qualificationStatus === 'disqualified') {
-        filter.qualificationStatus = { $in: ['disqualified', 'unqualified'] };
+      // Handle backward compatibility: 'not-qualified' filter should include 'not-qualified', 'disqualified', and 'unqualified'
+      if (req.query.qualificationStatus === 'not-qualified') {
+        filter.qualificationStatus = { $in: ['not-qualified', 'disqualified', 'unqualified'] };
       } else {
         filter.qualificationStatus = req.query.qualificationStatus;
       }
@@ -553,6 +554,8 @@ router.get('/export', [
       // Agent2 can see:
       // 1. Leads assigned to them
       // 2. Duplicate leads (for review)
+      // 3. Leads with qualificationStatus 'pending' (persistent across days)
+      // 4. Leads with leadProgressStatus 'Callback Needed' (persistent across days)
       filter.$or = [
         { 
           assignedTo: req.user._id,
@@ -560,6 +563,16 @@ router.get('/export', [
         },
         { 
           isDuplicate: true,
+          adminProcessed: { $ne: true }
+        },
+        {
+          assignedTo: req.user._id,
+          qualificationStatus: 'pending',
+          adminProcessed: { $ne: true }
+        },
+        {
+          assignedTo: req.user._id,
+          leadProgressStatus: 'Callback Needed',
           adminProcessed: { $ne: true }
         }
       ];
@@ -837,7 +850,7 @@ router.get('/', protect, [
     .withMessage('Invalid category filter'),
   query('qualificationStatus')
     .optional()
-    .isIn(['qualified', 'disqualified', 'pending'])
+    .isIn(['qualified', 'not-qualified', 'pending'])
     .withMessage('Invalid qualification status filter'),
   query('duplicateStatus')
     .optional()
@@ -887,9 +900,9 @@ router.get('/', protect, [
     }
 
     if (req.query.qualificationStatus) {
-      // Handle backward compatibility: 'disqualified' filter should include both 'disqualified' and 'unqualified'
-      if (req.query.qualificationStatus === 'disqualified') {
-        filter.qualificationStatus = { $in: ['disqualified', 'unqualified'] };
+      // Handle backward compatibility: 'not-qualified' filter should include 'not-qualified', 'disqualified', and 'unqualified'
+      if (req.query.qualificationStatus === 'not-qualified') {
+        filter.qualificationStatus = { $in: ['not-qualified', 'disqualified', 'unqualified'] };
       } else {
         filter.qualificationStatus = req.query.qualificationStatus;
       }
@@ -996,6 +1009,8 @@ router.get('/', protect, [
       // Agent2 can see:
       // 1. Leads assigned to them
       // 2. Duplicate leads (for review)
+      // 3. Leads with qualificationStatus 'pending' (persistent across days)
+      // 4. Leads with leadProgressStatus 'Callback Needed' (persistent across days)
       filter.$or = [
         { 
           assignedTo: req.user._id,
@@ -1003,6 +1018,16 @@ router.get('/', protect, [
         },
         { 
           isDuplicate: true,
+          adminProcessed: { $ne: true }
+        },
+        {
+          assignedTo: req.user._id,
+          qualificationStatus: 'pending',
+          adminProcessed: { $ne: true }
+        },
+        {
+          assignedTo: req.user._id,
+          leadProgressStatus: 'Callback Needed',
           adminProcessed: { $ne: true }
         }
       ];
@@ -1797,7 +1822,7 @@ router.get('/dashboard/stats', protect, async (req, res) => {
         Lead.countDocuments({ ...orgFilter, status: 'follow-up' }),
         Lead.countDocuments({ ...orgFilter, status: 'converted' }),
         Lead.countDocuments({ ...orgFilter, status: 'closed' }),
-        Lead.countDocuments({ ...orgFilter, leadProgressStatus: 'Immediate Enrollment' })
+        Lead.countDocuments({ ...orgFilter, leadProgressStatus: 'SALE' })
       ]);
 
       // Get active agents count from admin's organization only
@@ -1807,7 +1832,7 @@ router.get('/dashboard/stats', protect, async (req, res) => {
         isActive: { $ne: false }
       });
 
-      // Calculate conversion rate: (Immediate Enrollment calls ÷ Qualified leads) × 100
+      // Calculate conversion rate: (SALE calls ÷ Qualified leads) × 100
       const conversionRate = qualified > 0 ? ((immediateEnrollment / qualified) * 100).toFixed(2) : 0;
 
       stats = {
@@ -1831,10 +1856,10 @@ router.get('/dashboard/stats', protect, async (req, res) => {
         Lead.countDocuments({ ...filter, status: 'follow-up' }),
         Lead.countDocuments({ ...filter, status: 'converted' }),
         Lead.countDocuments({ ...filter, status: 'closed' }),
-        Lead.countDocuments({ ...filter, leadProgressStatus: 'Immediate Enrollment' })
+        Lead.countDocuments({ ...filter, leadProgressStatus: 'SALE' })
       ]);
 
-      // Calculate conversion rate: (Immediate Enrollment calls ÷ Qualified leads) × 100
+      // Calculate conversion rate: (SALE calls ÷ Qualified leads) × 100
       const conversionRate = qualified > 0 ? ((immediateEnrollment / qualified) * 100).toFixed(2) : 0;
 
       stats = {

@@ -34,7 +34,7 @@ const Agent1Dashboard = () => {
   // Pagination state
   const [pagination, setPagination] = useState({
     page: 1,
-    limit: 100,
+    limit: 500,
     total: 0,
     pages: 0
   });

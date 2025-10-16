@@ -20,20 +20,20 @@ import { formatEasternTimeForDisplay, getEasternNow, getEasternStartOfDay, getEa
 
 // Unified Lead Progress Status options for Agent 2
 const agent2LeadProgressOptions = [
-  "Appointment Scheduled",
-  "Immediate Enrollment",
-  "Info Provided – Awaiting Decision",
-  "Nurture – Not Ready",
-  "Qualified – Meets Criteria",
-  "Disqualified – Debt Too Low",
-  "Disqualified – Secured Debt Only",
-  "Disqualified – Non-Service State",
-  "Disqualified – Active with Competitor",
-  "Disqualified - unacceptable creditors",
+  "SALE",
   "Callback Needed",
-  "Hung Up",
+  "Existing Client",
+  "Unacceptable Creditors",
+  "Not Serviceable State",
+  "Sale Long Play",
+  "DO NOT CALL - Litigator",
+  "DO NOT CALL",
+  "Hang-up",
   "Not Interested",
-  "DNC (Do Not Contact)",
+  "No Answer",
+  "AIP Client",
+  "Not Qualified",
+  "Affordability",
   "Others"
 ];
 
@@ -86,7 +86,7 @@ const Agent2Dashboard = () => {
   // Pagination state
   const [pagination, setPagination] = useState({
     page: 1,
-    limit: 100,
+    limit: 500,
     total: 0,
     pages: 0
   });
@@ -1159,7 +1159,7 @@ const Agent2Dashboard = () => {
             >
               <option value="">All Qualification</option>
               <option value="qualified">Qualified</option>
-              <option value="disqualified">Disqualified</option>
+              <option value="not-qualified">Not - Qualified</option>
               <option value="pending">Pending</option>
             </select>
           </div>
@@ -1297,11 +1297,11 @@ const Agent2Dashboard = () => {
                   <td className="px-6 py-4 whitespace-nowrap">
                     <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
                       lead.qualificationStatus === 'qualified' ? 'bg-green-100 text-green-800' :
-                      lead.qualificationStatus === 'disqualified' ? 'bg-red-100 text-red-800' :
+                      lead.qualificationStatus === 'not-qualified' ? 'bg-red-100 text-red-800' :
                       'bg-yellow-100 text-yellow-800'
                     }`}>
                       {lead.qualificationStatus === 'qualified' ? '✅ Qualified' :
-                       lead.qualificationStatus === 'disqualified' ? '❌ Disqualified' :
+                       lead.qualificationStatus === 'not-qualified' ? '❌ Not - Qualified' :
                        '⏳ Pending'}
                     </span>
                   </td>
@@ -1746,11 +1746,11 @@ const Agent2Dashboard = () => {
                             <span className="font-medium text-gray-700">Qualification:</span>{' '}
                             <span className={`px-2 py-1 rounded-full text-xs font-medium ${
                               selectedLead.qualificationStatus === 'qualified' ? 'bg-green-100 text-green-800' :
-                              selectedLead.qualificationStatus === 'disqualified' ? 'bg-red-100 text-red-800' :
+                              selectedLead.qualificationStatus === 'not-qualified' ? 'bg-red-100 text-red-800' :
                               'bg-yellow-100 text-yellow-800'
                             }`}>
                               {selectedLead.qualificationStatus === 'qualified' ? 'Qualified' :
-                               selectedLead.qualificationStatus === 'disqualified' ? 'Disqualified' :
+                               selectedLead.qualificationStatus === 'not-qualified' ? 'Not - Qualified' :
                                'Pending'}
                             </span>
                           </div>
@@ -1829,7 +1829,7 @@ const Agent2Dashboard = () => {
                       >
                         <option value="">Select Qualification Status</option>
                         <option value="qualified">Qualified</option>
-                        <option value="disqualified">Disqualified</option>
+                        <option value="not-qualified">Not - Qualified</option>
                         {/* <option value="pending">Not Interested</option> */}
                       </select>
                     </div>
@@ -1874,7 +1874,7 @@ const Agent2Dashboard = () => {
                     )}
 
                     {/* Conversion Value (show only if status is successful) */}
-                    {updateData.leadProgressStatus === 'Immediate Enrollment' && (
+                    {updateData.leadProgressStatus === 'SALE' && (
                       <div>
                         <label className="block text-sm font-medium text-gray-700">Conversion Value</label>
                         <input

@@ -44,7 +44,7 @@ const SuperAdminDashboard = () => {
   // Pagination state for leads
   const [pagination, setPagination] = useState({
     page: 1,
-    limit: 100,
+    limit: 500,
     total: 0,
     pages: 0
   });
@@ -1111,7 +1111,7 @@ const SuperAdminDashboard = () => {
               >
                 <option value="">All Qualification</option>
                 <option value="qualified">Qualified</option>
-                <option value="disqualified">Disqualified</option>
+                <option value="not-qualified">Not - Qualified</option>
                 <option value="pending">Pending</option>
               </select>
             </div>

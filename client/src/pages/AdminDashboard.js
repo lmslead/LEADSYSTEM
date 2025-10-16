@@ -50,7 +50,7 @@ const AdminDashboard = () => {
   // Pagination state
   const [pagination, setPagination] = useState({
     page: 1,
-    limit: 100,
+    limit: 500,
     total: 0,
     pages: 0
   });
@@ -72,7 +72,7 @@ const AdminDashboard = () => {
   });
 
   // Add qualification status filter
-  const [qualificationFilter, setQualificationFilter] = useState('all'); // 'all', 'qualified', 'disqualified', 'pending'
+  const [qualificationFilter, setQualificationFilter] = useState('all'); // 'all', 'qualified', 'not-qualified', 'pending'
   
   // Add duplicate status filter
   const [duplicateFilter, setDuplicateFilter] = useState('all'); // 'all', 'duplicates', 'non-duplicates'
@@ -702,20 +702,21 @@ const AdminDashboard = () => {
 
   // Lead progress status options
   const leadProgressOptions = [
-    'Appointment Scheduled',
-    'Immediate Enrollment', 
-    'Info Provided – Awaiting Decision',
-    'Nurture – Not Ready',
-    'Qualified – Meets Criteria',
-    'Pre-Qualified – Docs Needed',
-    'Disqualified – Debt Too Low',
-    'Disqualified – Secured Debt Only',
-    'Disqualified – Non-Service State',
-    'Disqualified – Active with Competitor',
+    'SALE',
     'Callback Needed',
-    'Hung Up',
+    'Existing Client',
+    'Unacceptable Creditors',
+    'Not Serviceable State',
+    'Sale Long Play',
+    'DO NOT CALL - Litigator',
+    'DO NOT CALL',
+    'Hang-up',
     'Not Interested',
-    'DNC (Do Not Contact)'
+    'No Answer',
+    'AIP Client',
+    'Not Qualified',
+    'Affordability',
+    'Others'
   ];
 
   const getCategoryBadge = (category, completionPercentage = 0) => {
@@ -762,22 +763,28 @@ const AdminDashboard = () => {
   const getQualificationBadge = (qualificationStatus) => {
     const badges = {
       qualified: 'bg-green-100 text-green-800 border-green-200',
-      disqualified: 'bg-red-100 text-red-800 border-red-200',
+      'not-qualified': 'bg-red-100 text-red-800 border-red-200',
       pending: 'bg-yellow-100 text-yellow-800 border-yellow-200'
     };
 
     const icons = {
       qualified: CheckCircle,
-      disqualified: XCircle,
+      'not-qualified': XCircle,
       pending: Clock
     };
 
     const Icon = icons[qualificationStatus] || Clock;
 
+    const labels = {
+      qualified: 'Qualified',
+      'not-qualified': 'Not - Qualified',
+      pending: 'Pending'
+    };
+
     return (
       <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${badges[qualificationStatus] || badges.pending}`}>
         <Icon className="w-3 h-3 mr-1" />
-        {qualificationStatus?.charAt(0).toUpperCase() + qualificationStatus?.slice(1) || 'Pending'}
+        {labels[qualificationStatus] || 'Pending'}
       </span>
     );
   };
@@ -805,21 +812,39 @@ const AdminDashboard = () => {
 
     const totalLeads = allLeadsForStats.length;
     const qualifiedLeads = allLeadsForStats.filter(lead => lead.qualificationStatus === 'qualified').length;
-    const disqualifiedLeads = allLeadsForStats.filter(lead => 
-      lead.qualificationStatus === 'disqualified' || lead.qualificationStatus === 'unqualified'
+    const notQualifiedLeads = allLeadsForStats.filter(lead => 
+      lead.qualificationStatus === 'not-qualified' || lead.qualificationStatus === 'disqualified' || lead.qualificationStatus === 'unqualified'
     ).length;
     const pendingLeads = allLeadsForStats.filter(lead => lead.qualificationStatus === 'pending').length;
     const hotLeads = allLeadsForStats.filter(lead => lead.category === 'hot').length;
     
-    // Calculate conversion rate based on LEAD PROGRESS STATUS 'Immediate Enrollment' divided by qualified leads
-    // Formula: (No. of Immediate Enrollment leads (leadProgressStatus only) ÷ Qualified leads) × 100
+    // Calculate conversion rate based on LEAD PROGRESS STATUS 'SALE' divided by qualified leads
+    // Formula: (No. of SALE leads (leadProgressStatus only) ÷ Qualified leads) × 100
     const immediateEnrollmentLeads = allLeadsForStats.filter(lead => 
-      lead.leadProgressStatus === 'Immediate Enrollment'
+      lead.leadProgressStatus === 'SALE'
     ).length;
+    
+    // Get all unique leadProgressStatus values for debugging
+    const uniqueStatuses = [...new Set(allLeadsForStats.map(l => l.leadProgressStatus).filter(Boolean))];
+    const statusCounts = {};
+    allLeadsForStats.forEach(lead => {
+      const status = lead.leadProgressStatus || 'undefined';
+      statusCounts[status] = (statusCounts[status] || 0) + 1;
+    });
+    
+    console.log('📊 Conversion Rate Debug:', {
+      totalLeads: allLeadsForStats.length,
+      qualifiedLeads,
+      saleLeads: immediateEnrollmentLeads,
+      uniqueStatuses,
+      statusCounts,
+      conversionRate: qualifiedLeads > 0 ? ((immediateEnrollmentLeads / qualifiedLeads) * 100).toFixed(2) + '%' : '0%'
+    });
+    
     const calculatedConversionRate = qualifiedLeads > 0 ? parseFloat(((immediateEnrollmentLeads / qualifiedLeads) * 100).toFixed(2)) : 0;
     
     // Calculate qualification rate
-    const totalProcessed = qualifiedLeads + disqualifiedLeads;
+    const totalProcessed = qualifiedLeads + notQualifiedLeads;
     const calculatedQualificationRate = totalProcessed > 0 ? (qualifiedLeads / totalProcessed) * 100 : 0;
 
     // Get unique active agents count
@@ -834,7 +859,7 @@ const AdminDashboard = () => {
       ...stats, // Keep server stats as fallback
       totalLeads,
       qualifiedLeads,
-      disqualifiedLeads,
+      notQualifiedLeads,
       pendingLeads,
       hotLeads,
       conversionRate: calculatedConversionRate,
@@ -933,8 +958,8 @@ const AdminDashboard = () => {
               <XCircle className="h-7 w-7 text-red-600" />
             </div>
             <div>
-              <p className="text-sm font-medium text-gray-600">Disqualified</p>
-              <p className="text-3xl font-bold text-gray-900">{realTimeStats.disqualifiedLeads || 0}</p>
+              <p className="text-sm font-medium text-gray-600">Not - Qualified</p>
+              <p className="text-3xl font-bold text-gray-900">{realTimeStats.notQualifiedLeads || 0}</p>
             </div>
           </div>
 
@@ -956,8 +981,11 @@ const AdminDashboard = () => {
               <p className="text-sm font-medium text-gray-600">Conversion Rate</p>
               <p className="text-3xl font-bold text-gray-900">{conversionRate.toFixed(2)}%</p>
               <p className="text-xs text-gray-500">
-                Qualified / Immediate Enrollment ({realTimeStats.immediateEnrollmentLeads || 0})
+                {realTimeStats.immediateEnrollmentLeads || 0} SALE / {realTimeStats.qualifiedLeads || 0} Qualified
               </p>
+              {(realTimeStats.immediateEnrollmentLeads || 0) === 0 && (
+                <p className="text-xs text-orange-500 mt-1">No SALE leads yet</p>
+              )}
             </div>
           </div>
 
@@ -1131,16 +1159,16 @@ const AdminDashboard = () => {
                 </button>
                 <button
                   onClick={() => {
-                    setQualificationFilter('disqualified');
+                    setQualificationFilter('not-qualified');
                     resetPaginationAndFetch();
                   }}
                   className={`px-2 py-1 text-xs rounded transition-colors ${
-                    qualificationFilter === 'disqualified' 
+                    qualificationFilter === 'not-qualified' 
                       ? 'bg-red-600 text-white' 
                       : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
                   }`}
                 >
-                  Disqualified
+                  Not - Qualified
                 </button>
                 <button
                   onClick={() => {
@@ -1863,7 +1891,7 @@ const AdminDashboard = () => {
                             >
                               <option value="">Select Status</option>
                               <option value="qualified">Qualified</option>
-                              <option value="disqualified">Disqualified</option>
+                              <option value="not-qualified">Not - Qualified</option>
                               <option value="pending">Pending</option>
                             </select>
                             <div className="text-xs text-blue-600 italic mt-1">Independent from Lead Progress</div>

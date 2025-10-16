@@ -190,7 +190,7 @@ const leadSchema = new mongoose.Schema({
   // Agent 2 Status Fields
   leadStatus: {
     type: String,
-    enum: ['Warm Transfer – Pre-Qualified', 'Cold Transfer – Disqualified', 'From Internal Dept.', 'Test / Training Call']
+    enum: ['Warm Transfer – Pre-Qualified', 'Cold Transfer – Not - Qualified', 'From Internal Dept.', 'Test / Training Call']
   },
   contactStatus: {
     type: String,
@@ -198,7 +198,7 @@ const leadSchema = new mongoose.Schema({
   },
   qualificationOutcome: {
     type: String,
-    enum: ['Qualified – Meets Criteria', 'Pre-Qualified – Docs Needed', 'Disqualified – Debt Too Low', 'Disqualified – Secured Debt Only', 'Disqualified – Non-Service State', 'Disqualified – No Hardship', 'Disqualified – Active with Competitor']
+    enum: ['Qualified – Meets Criteria', 'Pre-Qualified – Docs Needed', 'Not - Qualified – Debt Too Low', 'Not - Qualified – Secured Debt Only', 'Not - Qualified – Non-Service State', 'Not - Qualified – No Hardship', 'Not - Qualified – Active with Competitor']
   },
   callDisposition: {
     type: String,
@@ -221,23 +221,24 @@ const leadSchema = new mongoose.Schema({
         if (!value || value.trim() === '') return true; // Allow empty values
         
         const predefinedStatuses = [
-          'Appointment Scheduled',
-          'Immediate Enrollment', 
-          'Info Provided – Awaiting Decision',
-          'Nurture – Not Ready',
-          'Qualified – Meets Criteria',
-          'Disqualified – Debt Too Low',
-          'Disqualified – Secured Debt Only',
-          'Disqualified – Non-Service State',
-          'Disqualified – Active with Competitor',
-          'Disqualified - unacceptable creditors',
+          'SALE',
           'Callback Needed',
-          'Hung Up',
+          'Existing Client',
+          'Unacceptable Creditors',
+          'Not Serviceable State',
+          'Sale Long Play',
+          'DO NOT CALL - Litigator',
+          'DO NOT CALL',
+          'Hang-up',
           'Not Interested',
-          'DNC (Do Not Contact)'
+          'No Answer',
+          'AIP Client',
+          'Not Qualified',
+          'Affordability',
+          'Others'
         ];
         
-        // Allow predefined statuses or any custom string (for "Others" option)
+        // Allow predefined statuses or any custom string (for "Others" option and backward compatibility with old dispositions)
         return predefinedStatuses.includes(value) || (typeof value === 'string' && value.trim().length > 0);
       },
       message: 'Lead progress status must be a valid string'
@@ -247,7 +248,7 @@ const leadSchema = new mongoose.Schema({
   // Lead Qualification Status (for admin filtering)
   qualificationStatus: {
     type: String,
-    enum: ['qualified', 'disqualified', 'pending'],
+    enum: ['qualified', 'not-qualified', 'pending'],
     default: 'pending'
   },
   
@@ -552,14 +553,14 @@ leadSchema.statics.getStatistics = async function() {
         qualifiedLeads: {
           $sum: { $cond: [{ $eq: ['$qualificationStatus', 'qualified'] }, 1, 0] }
         },
-        disqualifiedLeads: {
-          $sum: { $cond: [{ $in: ['$qualificationStatus', ['disqualified', 'unqualified']] }, 1, 0] }
+        notQualifiedLeads: {
+          $sum: { $cond: [{ $in: ['$qualificationStatus', ['not-qualified', 'unqualified']] }, 1, 0] }
         },
         pendingLeads: {
           $sum: { $cond: [{ $eq: ['$qualificationStatus', 'pending'] }, 1, 0] }
         },
         immediateEnrollmentLeads: {
-          $sum: { $cond: [{ $eq: ['$leadProgressStatus', 'Immediate Enrollment'] }, 1, 0] }
+          $sum: { $cond: [{ $eq: ['$leadProgressStatus', 'SALE'] }, 1, 0] }
         }
       }
     }
@@ -574,12 +575,12 @@ leadSchema.statics.getStatistics = async function() {
     successfulLeads: 0,
     followUpLeads: 0,
     qualifiedLeads: 0,
-    disqualifiedLeads: 0,
+    notQualifiedLeads: 0,
     pendingLeads: 0,
     immediateEnrollmentLeads: 0
   };
 
-  // Calculate conversion rate: (Immediate Enrollment call disposition leads ÷ Qualified leads) × 100
+  // Calculate conversion rate: (SALE call disposition leads ÷ Qualified leads) × 100
   result.conversionRate = result.qualifiedLeads > 0 
     ? ((result.immediateEnrollmentLeads / result.qualifiedLeads) * 100).toFixed(2)
     : 0;
