@@ -1,0 +1,15 @@
+{
+  "exportDate": "2025-10-17T11:44:31.432Z",
+  "sourceDatabase": "lmsdatabase.jo25hav.mongodb.net/papadms",
+  "collections": {
+    "users": 45,
+    "organizations": 2,
+    "leads": 1385
+  },
+  "totalRecords": 1432,
+  "files": [
+    "users.json",
+    "organizations.json",
+    "leads.json"
+  ]
+}

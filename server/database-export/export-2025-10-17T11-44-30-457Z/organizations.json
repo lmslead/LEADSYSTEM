@@ -1,0 +1,37 @@
+{
+  "collection": "organizations",
+  "exportDate": "2025-10-17T11:44:30.631Z",
+  "count": 2,
+  "data": [
+    {
+      "_id": "68b9c76d2c29dac1220cb81c",
+      "name": "REDDINGTON GLOBAL CONSULTANCY",
+      "description": "PVT .LTD",
+      "address": "177, udyog vihar .",
+      "phone": "0",
+      "email": "reddingtonglobal@reddingtonglobal.com",
+      "website": "https://www.reddingtonglobal.com",
+      "isActive": true,
+      "createdBy": "68b8631edb8d9f11eec45c7a",
+      "createdAt": "2025-09-04T17:07:57.210Z",
+      "updatedAt": "2025-09-04T17:07:57.212Z",
+      "__v": 0,
+      "id": "68b9c76d2c29dac1220cb81c"
+    },
+    {
+      "_id": "68bf6d5cb4a659bd5ed3c89a",
+      "name": "Anshivaan Future Vision",
+      "description": "PVT LTD",
+      "address": "859, Udyog Vihar Phase V Rd, Phase V, Udyog Vihar, Sector 19, Gurugram, Haryana 122016",
+      "phone": "9811852484",
+      "email": "prince.sharma@aifuturevision.in",
+      "website": "https://airlms.aifuturevision.in/admin/login.php",
+      "isActive": true,
+      "createdBy": "68b9eb3b46f0da6279c61a4f",
+      "createdAt": "2025-09-08T23:57:16.618Z",
+      "updatedAt": "2025-09-08T23:57:16.619Z",
+      "__v": 0,
+      "id": "68bf6d5cb4a659bd5ed3c89a"
+    }
+  ]
+}

@@ -106,40 +106,7 @@ const leadSchema = new mongoose.Schema({
     enum: ['300-549', '550-649', '650-699', '700-749', '750-850']
   },
   
-  // Lead Details (Legacy)
-  budget: {
-    type: Number,
-    min: [0, 'Budget cannot be negative']
-  },
-  source: {
-    type: String,
-    enum: [
-      'Personal Debt', 'Secured Debt', 'Unsecured Debt', 'Revolving Debt', 
-      'Installment Debt', 'Credit Card Debt', 'Mortgage Debt', 'Student Loans',
-      'Auto Loans', 'Personal Loans', 'Medical Debt', 'Home Equity Loans (HELOCs)',
-      'Payday Loans', 'Buy Now, Pay Later (BNPL) loans'
-    ],
-    default: 'Personal Debt'
-  },
-  company: {
-    type: String,
-    trim: true,
-    maxlength: [100, 'Company name cannot exceed 100 characters']
-  },
-  jobTitle: {
-    type: String,
-    trim: true,
-    maxlength: [100, 'Job title cannot exceed 100 characters']
-  },
-  location: {
-    type: String,
-    trim: true,
-    maxlength: [200, 'Location cannot exceed 200 characters']
-  },
-  requirements: {
-    type: String,
-    maxlength: [1000, 'Requirements cannot exceed 1000 characters']
-  },
+  // Lead Details
   notes: {
     type: String,
     maxlength: [2000, 'Notes cannot exceed 2000 characters']
@@ -180,40 +147,7 @@ const leadSchema = new mongoose.Schema({
     max: 100
   },
 
-  // Lead Status (Updated by Agent 2)
-  status: {
-    type: String,
-    enum: ['new', 'interested', 'not-interested', 'successful', 'follow-up'],
-    default: 'new'
-  },
-  
-  // Agent 2 Status Fields
-  leadStatus: {
-    type: String,
-    enum: ['Warm Transfer – Pre-Qualified', 'Cold Transfer – Not - Qualified', 'From Internal Dept.', 'Test / Training Call']
-  },
-  contactStatus: {
-    type: String,
-    enum: ['Connected & Engaged', 'Connected – Requested Callback', 'No Answer', 'Wrong Number', 'Call Dropped']
-  },
-  qualificationOutcome: {
-    type: String,
-    enum: ['Qualified – Meets Criteria', 'Pre-Qualified – Docs Needed', 'Not - Qualified – Debt Too Low', 'Not - Qualified – Secured Debt Only', 'Not - Qualified – Non-Service State', 'Not - Qualified – No Hardship', 'Not - Qualified – Active with Competitor']
-  },
-  callDisposition: {
-    type: String,
-    enum: ['Appointment Scheduled', 'Immediate Enrollment', 'Info Provided – Awaiting Decision', 'Nurture – Not Ready', 'Declined Services', 'DNC']
-  },
-  engagementOutcome: {
-    type: String,
-    enum: ['Proceeding with Program', 'Callback Needed', 'Hung Up', 'Info Only – Follow-up Needed', 'Not Interested', 'DNC']
-  },
-  disqualification: {
-    type: String,
-    enum: ['Debt Too Low', 'Secured Debt Only', 'No Debt', 'Wrong Number / Bad Contact']
-  },
-  
-  // Agent 2 Unified Progress Status (New field)
+  // Agent 2 Unified Progress Status
   leadProgressStatus: {
     type: String,
     validate: {
@@ -255,9 +189,6 @@ const leadSchema = new mongoose.Schema({
   },
   
   // Agent 2 Tracking Fields
-  agent2LastAction: {
-    type: String
-  },
   lastUpdatedBy: {
     type: String
   },
@@ -312,13 +243,6 @@ const leadSchema = new mongoose.Schema({
     maxlength: [500, 'Assignment notes cannot exceed 500 characters']
   },
   
-  // Priority (derived from category)
-  priority: {
-    type: String,
-    enum: ['low', 'medium', 'high'],
-    default: 'low'
-  },
-
   // Conversion tracking
   convertedAt: {
     type: Date
@@ -470,18 +394,10 @@ leadSchema.pre('save', async function(next) {
   // Categorize based on completion percentage
   if (this.completionPercentage >= 80) {
     this.category = 'hot';
-    this.priority = 'high';
   } else if (this.completionPercentage >= 50) {
     this.category = 'warm';
-    this.priority = 'medium';
   } else {
     this.category = 'cold';
-    this.priority = 'low';
-  }
-
-  // Set conversion date if status changed to successful
-  if (this.status === 'successful' && !this.convertedAt) {
-    this.convertedAt = getEasternNow();
   }
 
   // Normalize phone numbers to include +1 prefix
