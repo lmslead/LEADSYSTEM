@@ -753,6 +753,12 @@ const Agent1Dashboard = () => {
       return;
     }
 
+    // Validate that assignment notes (closure name) is provided
+    if (!assignmentData.assignmentNotes || assignmentData.assignmentNotes.trim() === '') {
+      toast.error('Lead Assigned To Closure Name is required and cannot be empty');
+      return;
+    }
+
     try {
       setSubmitting(true);
       await axios.post(`/api/leads/${assigningLead.leadId}/assign`, assignmentData);
@@ -802,6 +808,9 @@ const Agent1Dashboard = () => {
   };
 
   const getStatusBadge = (status) => {
+    // Handle undefined or null status
+    const safeStatus = status || 'new';
+    
     const badges = {
       new: 'bg-gray-100 text-gray-800',
       interested: 'bg-green-100 text-green-800',
@@ -810,9 +819,12 @@ const Agent1Dashboard = () => {
       'follow-up': 'bg-blue-100 text-blue-800'
     };
 
+    // Use default style if status is not in badges object
+    const badgeStyle = badges[safeStatus] || badges.new;
+
     return (
-      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${badges[status]}`}>
-        {status.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${badgeStyle}`}>
+        {safeStatus.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}
       </span>
     );
   };
@@ -1985,15 +1997,16 @@ const Agent1Dashboard = () => {
                     )}
                   </div>
 
-                  {/* Assignment Notes */}
+                  {/* Assignment Notes - Required Field */}
                   <div className="mb-6">
                     <label className="block text-sm font-bold text-red-600 mb-2">
-                      Lead Assigned To Closure Name (compulsory for Agent1)
+                      Lead Assigned To Closure Name (compulsory for Agent1) <span className="text-red-500">*</span>
                     </label>
                     <textarea
                       rows="3"
+                      required
                       className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
-                      placeholder="Add any notes for the assigned agent..."
+                      placeholder="Enter the closure name - this field is mandatory"
                       value={assignmentData.assignmentNotes}
                       onChange={(e) => setAssignmentData({
                         ...assignmentData,
@@ -2002,7 +2015,7 @@ const Agent1Dashboard = () => {
                       maxLength={500}
                     />
                     <div className="text-xs text-gray-400 mt-1">
-                      {assignmentData.assignmentNotes.length}/500 characters
+                      {assignmentData.assignmentNotes.length}/500 characters (Required field)
                     </div>
                   </div>
                 </div>
@@ -2017,7 +2030,7 @@ const Agent1Dashboard = () => {
                   </button>
                   <button
                     type="submit"
-                    disabled={submitting || !assignmentData.assignedTo}
+                    disabled={submitting || !assignmentData.assignedTo || !assignmentData.assignmentNotes.trim()}
                     className="px-6 py-2 text-sm font-medium text-white bg-blue-600 border border-transparent rounded-md hover:bg-blue-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-blue-500 disabled:opacity-50"
                   >
                     {submitting ? (
