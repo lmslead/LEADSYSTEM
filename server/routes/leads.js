@@ -809,6 +809,61 @@ router.get('/export', [
   }
 });
 
+// @route   GET /api/leads/assigned-to-me
+// @desc    Get leads assigned to current Agent2 user (for persistent dashboard)
+// @access  Private (Agent2 only)
+router.get('/assigned-to-me', protect, async (req, res) => {
+  try {
+    if (req.user.role !== 'agent2') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only Agent2 can access assigned leads'
+      });
+    }
+
+    const { status } = req.query;
+
+    // Build filter for assigned leads
+    let filter = {
+      assignedTo: req.user._id,
+      adminProcessed: { $ne: true }
+    };
+
+    // Add status-specific filters
+    if (status === 'pending') {
+      filter.qualificationStatus = 'pending';
+    } else if (status === 'callback') {
+      filter.leadProgressStatus = 'Callback Needed';
+    }
+
+    // Fetch assigned leads (no date filtering for persistence)
+    const leads = await Lead.find(filter)
+      .populate('createdBy', 'name email')
+      .populate('updatedBy', 'name email')
+      .populate('assignedTo', 'name email')
+      .populate('assignedBy', 'name email')
+      .populate('organization', 'name')
+      .sort({ assignedAt: -1 });
+
+    res.json({
+      success: true,
+      message: 'Assigned leads fetched successfully',
+      data: {
+        leads,
+        total: leads.length
+      }
+    });
+
+  } catch (error) {
+    console.error('Assigned leads fetch error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error fetching assigned leads',
+      error: process.env.NODE_ENV === 'development' ? error.message : {}
+    });
+  }
+});
+
 // @desc    Get all leads with pagination and filtering
 // @route   GET /api/leads
 // @access  Private (Agent1, Agent2, Admin)
@@ -1643,6 +1698,12 @@ router.post('/:id/assign', protect, [
     lead.assignedAt = getEasternNow();
     lead.assignmentNotes = assignmentNotes || '';
     lead.updatedBy = req.user._id;
+    
+    // Set initial status for persistent tracking
+    lead.qualificationStatus = 'pending';
+    lead.leadProgressStatus = 'Callback Needed';
+    lead.lastUpdatedBy = req.user.name;
+    lead.lastUpdatedAt = getEasternNow();
 
     await lead.save();
 
@@ -2089,6 +2150,148 @@ router.put('/:id/reassign', protect, [
     res.status(500).json({
       success: false,
       message: 'Error reassigning lead',
+      error: process.env.NODE_ENV === 'development' ? error.message : {}
+    });
+  }
+});
+
+// @route   PUT /api/leads/:id/qualification-status
+// @desc    Update lead qualification status (Agent2 only)
+// @access  Private
+router.put('/:id/qualification-status', protect, [
+  body('qualificationStatus')
+    .isIn(['qualified', 'not-qualified', 'pending'])
+    .withMessage('Invalid qualification status')
+], handleValidationErrors, async (req, res) => {
+  try {
+    if (req.user.role !== 'agent2') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only Agent2 can update qualification status'
+      });
+    }
+
+    const { qualificationStatus, updatedBy } = req.body;
+
+    // Find the lead
+    const lead = await Lead.findByLeadId(req.params.id);
+    if (!lead) {
+      return res.status(404).json({
+        success: false,
+        message: 'Lead not found'
+      });
+    }
+
+    // Check if lead is assigned to this Agent2
+    if (!lead.assignedTo || lead.assignedTo.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can only update leads assigned to you'
+      });
+    }
+
+    // Update qualification status
+    lead.qualificationStatus = qualificationStatus;
+    lead.lastUpdatedBy = updatedBy || req.user.name;
+    lead.lastUpdatedAt = getEasternNow();
+    lead.updatedBy = req.user._id;
+
+    await lead.save();
+
+    // Populate the updated lead
+    await lead.populate(['createdBy updatedBy assignedTo assignedBy', 'name email']);
+
+    // Emit real-time update
+    if (req.io) {
+      req.io.emit('leadUpdated', {
+        lead: lead,
+        updatedBy: req.user.name,
+        updateType: 'qualification_status'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Qualification status updated successfully',
+      data: { lead }
+    });
+
+  } catch (error) {
+    console.error('Qualification status update error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating qualification status',
+      error: process.env.NODE_ENV === 'development' ? error.message : {}
+    });
+  }
+});
+
+// @route   PUT /api/leads/:id/progress-status
+// @desc    Update lead progress status (Agent2 only)
+// @access  Private
+router.put('/:id/progress-status', protect, [
+  body('leadProgressStatus')
+    .notEmpty()
+    .withMessage('Progress status is required')
+], handleValidationErrors, async (req, res) => {
+  try {
+    if (req.user.role !== 'agent2') {
+      return res.status(403).json({
+        success: false,
+        message: 'Only Agent2 can update progress status'
+      });
+    }
+
+    const { leadProgressStatus, updatedBy } = req.body;
+
+    // Find the lead
+    const lead = await Lead.findByLeadId(req.params.id);
+    if (!lead) {
+      return res.status(404).json({
+        success: false,
+        message: 'Lead not found'
+      });
+    }
+
+    // Check if lead is assigned to this Agent2
+    if (!lead.assignedTo || lead.assignedTo.toString() !== req.user._id.toString()) {
+      return res.status(403).json({
+        success: false,
+        message: 'You can only update leads assigned to you'
+      });
+    }
+
+    // Update progress status
+    lead.leadProgressStatus = leadProgressStatus;
+    lead.lastUpdatedBy = updatedBy || req.user.name;
+    lead.lastUpdatedAt = getEasternNow();
+    lead.updatedBy = req.user._id;
+
+    await lead.save();
+
+    // Populate the updated lead
+    await lead.populate(['createdBy updatedBy assignedTo assignedBy', 'name email']);
+
+    // Emit real-time update
+    if (req.io) {
+      req.io.emit('leadUpdated', {
+        lead: lead,
+        updatedBy: req.user.name,
+        updateType: 'progress_status'
+      });
+    }
+
+    res.json({
+      success: true,
+      message: 'Progress status updated successfully',
+      data: { lead }
+    });
+
+  } catch (error) {
+    console.error('Progress status update error:', error);
+    res.status(500).json({
+      success: false,
+      message: 'Error updating progress status',
       error: process.env.NODE_ENV === 'development' ? error.message : {}
     });
   }

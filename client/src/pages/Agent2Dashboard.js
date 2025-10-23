@@ -82,6 +82,12 @@ const Agent2Dashboard = () => {
   const [showCreateForm, setShowCreateForm] = useState(false);  // New lead creation form
   const [updating, setUpdating] = useState(false);
   const [submitting, setSubmitting] = useState(false);  // For lead creation
+  
+  // Persistent leads state
+  const [pendingQualificationLeads, setPendingQualificationLeads] = useState([]);
+  const [callbackNeededLeads, setCallbackNeededLeads] = useState([]);
+  const [persistentLeadsLoading, setPersistentLeadsLoading] = useState(false);
+  const [activeTab, setActiveTab] = useState('today'); // 'today', 'pending-qualification', 'callback-needed'
 
   // Pagination state
   const [pagination, setPagination] = useState({
@@ -261,6 +267,41 @@ const Agent2Dashboard = () => {
     }
   }, [pagination.limit, filters]);
 
+  // Fetch persistent leads for Agent2 dashboard
+  const fetchPersistentLeads = useCallback(async () => {
+    try {
+      console.log('Fetching persistent leads...');
+      setPersistentLeadsLoading(true);
+      
+      // Fetch leads assigned to this Agent2 user
+      const response = await axios.get('/api/leads/assigned-to-me');
+      console.log('Persistent leads response:', response.data);
+      const leads = response.data?.data?.leads || [];
+      
+      // Filter leads by status - these persist regardless of creation date
+      const pendingQualification = leads.filter(lead => 
+        lead.qualificationStatus === 'pending'
+      );
+      
+      const callbackNeeded = leads.filter(lead => 
+        lead.leadProgressStatus === 'Callback Needed'
+      );
+      
+      console.log('Filtered leads:', { pendingQualification: pendingQualification.length, callbackNeeded: callbackNeeded.length });
+      
+      setPendingQualificationLeads(pendingQualification);
+      setCallbackNeededLeads(callbackNeeded);
+    } catch (error) {
+      console.error('Error fetching persistent leads:', error);
+      toast.error('Failed to fetch persistent leads');
+    } finally {
+      setPersistentLeadsLoading(false);
+    }
+  }, []);
+
+  // Remove unused functions that were replaced by standard action buttons
+  // handleUpdateQualificationStatus and handleUpdateProgressStatus no longer needed
+
   // Pagination handler
   const handlePageChange = async (newPage) => {
     if (newPage >= 1 && newPage <= pagination.pages) {
@@ -291,8 +332,9 @@ const Agent2Dashboard = () => {
     
     // Refetch leads
     fetchLeads(1);
+    fetchPersistentLeads(); // Also refresh persistent leads
     toast.success('Dashboard refreshed!');
-  }, [fetchLeads]);
+  }, [fetchLeads, fetchPersistentLeads]);
 
   // Register refresh callback
   useEffect(() => {
@@ -301,6 +343,11 @@ const Agent2Dashboard = () => {
       unregisterRefreshCallback('agent2');
     };
   }, [registerRefreshCallback, unregisterRefreshCallback, handleDashboardRefresh]);
+
+  // Fetch persistent leads on component mount
+  useEffect(() => {
+    fetchPersistentLeads();
+  }, []); // Empty dependency array for mount only
 
   // Reset pagination when filters change
   const resetPaginationAndFetch = useCallback(() => {
@@ -678,20 +725,39 @@ const Agent2Dashboard = () => {
   };
 
   const getCategoryBadge = (category, completionPercentage) => {
+    if (!category) {
+      return (
+        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border bg-gray-100 text-gray-800 border-gray-200">
+          N/A (0%)
+        </span>
+      );
+    }
+
     const badges = {
       hot: 'bg-red-100 text-red-800 border-red-200',
       warm: 'bg-yellow-100 text-yellow-800 border-yellow-200',
       cold: 'bg-blue-100 text-blue-800 border-blue-200'
     };
 
+    const percentage = completionPercentage || 0;
+
     return (
-      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${badges[category]}`}>
-        {category.charAt(0).toUpperCase() + category.slice(1)} ({completionPercentage}%)
+      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${badges[category] || 'bg-gray-100 text-gray-800 border-gray-200'}`}>
+        {category.charAt(0).toUpperCase() + category.slice(1)} ({percentage}%)
       </span>
     );
   };
 
   const getStatusBadge = (status) => {
+    if (!status) {
+      return (
+        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-gray-100 text-gray-800">
+          <AlertCircle className="w-3 h-3 mr-1" />
+          Unknown
+        </span>
+      );
+    }
+
     const badges = {
       new: 'bg-gray-100 text-gray-800',
       interested: 'bg-green-100 text-green-800',
@@ -708,16 +774,192 @@ const Agent2Dashboard = () => {
       'follow-up': Clock
     };
 
-    const Icon = icons[status];
+    const Icon = icons[status] || AlertCircle;
 
     return (
-      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${badges[status]}`}>
+      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${badges[status] || 'bg-gray-100 text-gray-800'}`}>
         <Icon className="w-3 h-3 mr-1" />
         {status.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}
       </span>
     );
   };
 
+  // Render persistent leads table
+  const renderPersistentLeadsTable = (leads, type, title, description) => (
+    <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+      <div className="px-6 py-4 border-b border-gray-200">
+        <h3 className="text-lg font-medium text-gray-900">{title} ({leads.length})</h3>
+        <p className="text-sm text-gray-600 mt-1">{description}</p>
+      </div>
+      
+      {persistentLeadsLoading ? (
+        <div className="px-6 py-8 text-center">
+          <LoadingSpinner message="Loading persistent leads..." />
+        </div>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="min-w-full divide-y divide-gray-200">
+            <thead className="bg-gray-50">
+              <tr>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Lead Info
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Contact
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Category
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Debt Amount
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Debt Type
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Duplicate Status
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Qualification Status
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Created Date
+                </th>
+                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                  Actions
+                </th>
+              </tr>
+            </thead>
+            <tbody className="bg-white divide-y divide-gray-200">
+              {leads.map((lead) => (
+                <tr key={lead.leadId || lead._id} className="hover:bg-gray-50">
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div>
+                      <div className="text-sm font-medium text-gray-900">{lead.name}</div>
+                      <div className="text-sm text-gray-500">
+                        {lead.debtCategory ? `${lead.debtCategory.charAt(0).toUpperCase() + lead.debtCategory.slice(1)} Debt` : 'N/A'}
+                      </div>
+                      {lead.leadId && (
+                        <div className="text-xs text-primary-600 font-mono">ID: {lead.leadId}</div>
+                      )}
+                      <div className="text-xs text-gray-400">
+                        Created by: {lead.createdBy?.name}
+                      </div>
+                      {lead.lastUpdatedBy && (
+                        <div className="text-xs text-green-600">
+                          Updated by: {lead.lastUpdatedBy}
+                        </div>
+                      )}
+                      {lead.assignmentNotes && (
+                        <div className="text-xs text-gray-500 mt-1">
+                          Note: {lead.assignmentNotes}
+                        </div>
+                      )}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <div className="text-sm text-gray-900">{maskEmail(lead.email)}</div>
+                    <div className="text-sm text-gray-500">{maskPhone(lead.phone)}</div>
+                    {lead.alternatePhone && (
+                      <div className="text-xs text-gray-400">Alt: {maskPhone(lead.alternatePhone)}</div>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {getCategoryBadge(lead.category, lead.completionPercentage)}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {lead.totalDebtAmount ? maskAmount(lead.totalDebtAmount) : 'N/A'}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-900">
+                    {Array.isArray(lead.debtTypes) && lead.debtTypes.length > 0 
+                      ? (
+                        <div className="space-y-1">
+                          {lead.debtTypes.map((debtType, index) => (
+                            <div key={index} className="text-sm text-gray-900">
+                              {debtType}
+                            </div>
+                          ))}
+                        </div>
+                      )
+                      : (lead.source || 'N/A')}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    {lead.isDuplicate ? (
+                      <div>
+                        <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-red-100 text-red-800">
+                          🔄 Duplicate
+                        </span>
+                        {lead.duplicateReason && (
+                          <div className="text-xs text-gray-500 mt-1">
+                            Phone Match
+                          </div>
+                        )}
+                        {lead.duplicateOf && (
+                          <div className="text-xs text-blue-600 mt-1">
+                            Original: {lead.duplicateOf.leadId || lead.duplicateOf}
+                          </div>
+                        )}
+                      </div>
+                    ) : (
+                      <span className="inline-flex px-2 py-1 text-xs font-semibold rounded-full bg-green-100 text-green-800">
+                        ✅ Unique
+                      </span>
+                    )}
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap">
+                    <span className={`inline-flex px-2 py-1 text-xs font-semibold rounded-full ${
+                      lead.qualificationStatus === 'qualified' ? 'bg-green-100 text-green-800' :
+                      (lead.qualificationStatus === 'not-qualified' || lead.qualificationStatus === 'disqualified' || lead.qualificationStatus === 'unqualified') ? 'bg-red-100 text-red-800' :
+                      'bg-yellow-100 text-yellow-800'
+                    }`}>
+                      {lead.qualificationStatus === 'qualified' ? '✅ Qualified' :
+                       (lead.qualificationStatus === 'not-qualified' || lead.qualificationStatus === 'disqualified' || lead.qualificationStatus === 'unqualified') ? '❌ Not - Qualified' :
+                       '⏳ Pending'}
+                    </span>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm text-gray-500">
+                    <div>
+                      {formatEasternTimeForDisplay(lead.createdAt, { includeTime: false })}
+                    </div>
+                    <div className="text-xs text-gray-400">
+                      {formatEasternTimeForDisplay(lead.createdAt, { includeTime: true, timeOnly: true })}
+                    </div>
+                  </td>
+                  <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
+                    <button
+                      onClick={() => openViewModal(lead)}
+                      className="text-blue-600 hover:text-blue-900 mr-3"
+                    >
+                      View Details
+                    </button>
+                    <button
+                      onClick={() => openEditModal(lead)}
+                      className="text-green-600 hover:text-green-900 mr-3"
+                    >
+                      Edit Details
+                    </button>
+                    <button
+                      onClick={() => openUpdateModal(lead)}
+                      className="text-primary-600 hover:text-primary-900 mr-3"
+                    >
+                      Update Status
+                    </button>
+                  </td>
+                </tr>
+              ))}
+              {leads.length === 0 && (
+                <tr>
+                  <td colSpan="9" className="px-6 py-8 text-center text-gray-500">
+                    No {type === 'qualification' ? 'pending qualification' : 'callback needed'} leads assigned to you.
+                  </td>
+                </tr>
+              )}
+            </tbody>
+          </table>
+        </div>
+      )}
+    </div>
+  );
 
 
   const getLeadStats = () => {
@@ -736,7 +978,17 @@ const Agent2Dashboard = () => {
     const successful = filteredLeads.filter(lead => lead.status === 'successful').length;
     const followUp = filteredLeads.filter(lead => lead.status === 'follow-up').length;
 
-    return { total, newLeads, interested, successful, followUp, todaysLeads: filteredLeads };
+    return { 
+      total, 
+      newLeads, 
+      interested, 
+      successful, 
+      followUp, 
+      todaysLeads: filteredLeads,
+      // Add persistent leads counts
+      pendingQualificationCount: pendingQualificationLeads.length,
+      callbackNeededCount: callbackNeededLeads.length
+    };
   };
 
   const stats = getLeadStats();
@@ -1011,13 +1263,38 @@ const Agent2Dashboard = () => {
         </button>
       </div>
 
-      {/* Today's Assigned Leads Summary for Agent2 */}
-      <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-        <div className="text-center">
-          <h3 className="text-lg font-medium text-gray-900 mb-2">Today's Assigned Leads</h3>
-          <p className="text-sm text-gray-600">Agent2 views only today's assigned leads - Daily data reset for agents</p>
-          <div className="mt-4 text-2xl font-bold text-green-600">
-            {stats.todaysLeads?.length || 0} leads assigned today
+      {/* Agent2 Dashboard Summary */}
+      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+        {/* Today's Assigned Leads */}
+        <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+          <div className="text-center">
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Today's Assigned</h3>
+            <div className="text-2xl font-bold text-green-600">
+              {stats.todaysLeads?.length || 0}
+            </div>
+            <p className="text-sm text-gray-600">leads assigned today</p>
+          </div>
+        </div>
+
+        {/* Pending Qualification */}
+        <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+          <div className="text-center">
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Pending Qualification</h3>
+            <div className="text-2xl font-bold text-yellow-600">
+              {stats.pendingQualificationCount || 0}
+            </div>
+            <p className="text-sm text-gray-600">leads need qualification</p>
+          </div>
+        </div>
+
+        {/* Callback Needed */}
+        <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+          <div className="text-center">
+            <h3 className="text-lg font-medium text-gray-900 mb-2">Callback Needed</h3>
+            <div className="text-2xl font-bold text-orange-600">
+              {stats.callbackNeededCount || 0}
+            </div>
+            <p className="text-sm text-gray-600">leads need callback</p>
           </div>
         </div>
       </div>
@@ -1085,8 +1362,45 @@ const Agent2Dashboard = () => {
         </div> */}
       </div>
 
-      {/* Filters */}
-      <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+      {/* Tabs Navigation */}
+      <div className="border-b border-gray-200">
+        <nav className="-mb-px flex space-x-8">
+          <button
+            onClick={() => setActiveTab('today')}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'today'
+                ? 'border-primary-500 text-primary-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Today's Leads ({stats.todaysLeads?.length || 0})
+          </button>
+          <button
+            onClick={() => setActiveTab('pending-qualification')}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'pending-qualification'
+                ? 'border-yellow-500 text-yellow-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Pending Qualification ({stats.pendingQualificationCount || 0})
+          </button>
+          <button
+            onClick={() => setActiveTab('callback-needed')}
+            className={`py-2 px-1 border-b-2 font-medium text-sm ${
+              activeTab === 'callback-needed'
+                ? 'border-orange-500 text-orange-600'
+                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+            }`}
+          >
+            Callback Needed ({stats.callbackNeededCount || 0})
+          </button>
+        </nav>
+      </div>
+
+      {/* Filters - Only show for today's leads tab */}
+      {activeTab === 'today' && (
+        <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
         {/* Duplicate Status Filter Buttons */}
         <div className="flex flex-wrap gap-2 mb-4">
           <button
@@ -1175,15 +1489,19 @@ const Agent2Dashboard = () => {
             </button>
           </div>
         </div>
-
-
       </div>
+      )}
 
-      {/* Leads Table */}
-      <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-        <div className="px-6 py-4 border-b border-gray-200">
-          <h3 className="text-lg font-medium text-gray-900">All Leads ({leads.length})</h3>
-        </div>
+      {/* Tab Content */}
+      <div className="mt-6">
+        {activeTab === 'today' && (
+          <>
+            {/* Today's Leads Table */}
+            <div className="bg-white rounded-lg shadow-sm border border-gray-200">
+              <div className="px-6 py-4 border-b border-gray-200">
+                <h3 className="text-lg font-medium text-gray-900">Today's Assigned Leads ({stats.todaysLeads?.length || 0})</h3>
+                <p className="text-sm text-gray-600 mt-1">Leads assigned to you today</p>
+              </div>
         
         <div className="overflow-x-auto">
           <table className="min-w-full divide-y divide-gray-200">
@@ -1359,6 +1677,29 @@ const Agent2Dashboard = () => {
             />
           </div>
         )}
+      </div>
+      </>
+      )}
+
+      {/* Pending Qualification Tab */}
+      {activeTab === 'pending-qualification' && (
+        renderPersistentLeadsTable(
+          pendingQualificationLeads,
+          'qualification',
+          'Pending Qualification Leads',
+          'These leads remain here until you update their qualification status'
+        )
+      )}
+
+      {/* Callback Needed Tab */}
+      {activeTab === 'callback-needed' && (
+        renderPersistentLeadsTable(
+          callbackNeededLeads,
+          'callback',
+          'Callback Needed Leads',
+          'These leads remain here until you update their progress status'
+        )
+      )}
       </div>
 
       {/* View Lead Details Modal */}

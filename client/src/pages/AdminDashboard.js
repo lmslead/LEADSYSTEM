@@ -1,7 +1,7 @@
 import React, { useState, useEffect, useCallback } from 'react';
 import { 
   BarChart3, 
- 
+  TrendingUp,
   Users, 
   Calendar,
   Target,
@@ -758,12 +758,12 @@ const AdminDashboard = () => {
       'follow-up': Clock
     };
 
-    const Icon = icons[status];
+    const Icon = icons[status] || AlertCircle; // Added fallback to prevent undefined
 
     return (
-      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${badges[status]}`}>
+      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${badges[status] || 'bg-gray-100 text-gray-800'}`}>
         <Icon className="w-3 h-3 mr-1" />
-        {status?.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}
+        {status?.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Unknown'}
       </span>
     );
   };
