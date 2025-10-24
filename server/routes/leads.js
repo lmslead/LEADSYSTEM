@@ -1867,14 +1867,16 @@ router.get('/dashboard/stats', protect, async (req, res) => {
       
       const orgFilter = { createdBy: { $in: userOrganizationIds } };
       
-      const [total, newLeads, qualified, followUp, converted, closed, immediateEnrollment] = await Promise.all([
+      const [total, newLeads, qualified, notQualified, pending, followUp, converted, closed, immediateEnrollment] = await Promise.all([
         Lead.countDocuments(orgFilter),
         Lead.countDocuments({ ...orgFilter, status: 'new' }),
         Lead.countDocuments({ ...orgFilter, qualificationStatus: 'qualified' }),
+        Lead.countDocuments({ ...orgFilter, qualificationStatus: { $in: ['not-qualified', 'disqualified', 'unqualified'] } }),
+        Lead.countDocuments({ ...orgFilter, qualificationStatus: 'pending' }),
         Lead.countDocuments({ ...orgFilter, status: 'follow-up' }),
         Lead.countDocuments({ ...orgFilter, status: 'converted' }),
         Lead.countDocuments({ ...orgFilter, status: 'closed' }),
-        Lead.countDocuments({ ...orgFilter, leadProgressStatus: 'SALE' })
+        Lead.countDocuments({ ...orgFilter, leadProgressStatus: { $in: ['SALE', 'Immediate Enrollment'] } })
       ]);
 
       // Get active agents count from admin's organization only
@@ -1891,24 +1893,28 @@ router.get('/dashboard/stats', protect, async (req, res) => {
         totalLeads: total,
         newLeads,
         qualified,
+        qualifiedLeads: qualified,
+        notQualifiedLeads: notQualified,
+        pendingLeads: pending,
         followUp,
         converted,
         closed,
-        qualifiedLeads: qualified,
         immediateEnrollmentLeads: immediateEnrollment,
         conversionRate: conversionRate,
         activeAgents
       };
     } else {
       // Get filtered stats for agents
-      const [total, newLeads, qualified, followUp, converted, closed, immediateEnrollment] = await Promise.all([
+      const [total, newLeads, qualified, notQualified, pending, followUp, converted, closed, immediateEnrollment] = await Promise.all([
         Lead.countDocuments(filter),
         Lead.countDocuments({ ...filter, status: 'new' }),
         Lead.countDocuments({ ...filter, qualificationStatus: 'qualified' }),
+        Lead.countDocuments({ ...filter, qualificationStatus: { $in: ['not-qualified', 'disqualified', 'unqualified'] } }),
+        Lead.countDocuments({ ...filter, qualificationStatus: 'pending' }),
         Lead.countDocuments({ ...filter, status: 'follow-up' }),
         Lead.countDocuments({ ...filter, status: 'converted' }),
         Lead.countDocuments({ ...filter, status: 'closed' }),
-        Lead.countDocuments({ ...filter, leadProgressStatus: 'SALE' })
+        Lead.countDocuments({ ...filter, leadProgressStatus: { $in: ['SALE', 'Immediate Enrollment'] } })
       ]);
 
       // Calculate conversion rate: (SALE calls ÷ Qualified leads) × 100
@@ -1918,10 +1924,12 @@ router.get('/dashboard/stats', protect, async (req, res) => {
         totalLeads: total,
         newLeads,
         qualified,
+        qualifiedLeads: qualified,
+        notQualifiedLeads: notQualified,
+        pendingLeads: pending,
         followUp,
         converted,
         closed,
-        qualifiedLeads: qualified,
         immediateEnrollmentLeads: immediateEnrollment,
         conversionRate: conversionRate
       };
@@ -1969,10 +1977,10 @@ router.get('/dashboard/stats', protect, async (req, res) => {
     });
 
   } catch (error) {
-    console.error('Get stats error:', error);
+    console.error('Dashboard stats error:', error);
     res.status(500).json({
       success: false,
-      message: 'Error fetching statistics',
+      message: 'Error fetching dashboard statistics',
       error: process.env.NODE_ENV === 'development' ? error.message : {}
     });
   }

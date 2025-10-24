@@ -9,6 +9,7 @@ const http = require('http');
 const socketIo = require('socket.io');
 const path = require('path');
 const { formatEasternTime, getEasternNow } = require('./utils/timeFilters');
+const SocketOptimizer = require('./utils/socketOptimizer'); // PERFORMANCE: Add socket optimizer
 require('dotenv').config();
 
 // Import routes
@@ -97,9 +98,10 @@ app.use(mongoSanitize());
 // Logging
 app.use(morgan('combined'));
 
-// Make io accessible to routes
+// Make optimized socket accessible to routes
 app.use((req, res, next) => {
   req.io = io;
+  req.socketOptimizer = socketOptimizer;
   next();
 });
 
@@ -144,14 +146,23 @@ app.use('*', (req, res) => {
   res.status(404).json({ message: 'API endpoint not found' });
 });
 
-// Socket.IO connection handling
+// Socket.IO connection handling with optimization
+const socketOptimizer = new SocketOptimizer(io);
+
 io.on('connection', (socket) => {
   console.log('New client connected:', socket.id);
 
   // Handle authentication
-  const { userId, userRole } = socket.handshake.auth || {};
+  const { userId, userRole, organizationId } = socket.handshake.auth || {};
+  
   if (userId && userRole) {
-    console.log(`User ${userId} (${userRole}) connected with socket ${socket.id}`);
+    socketOptimizer.registerUser(socket, userId, userRole, organizationId);
+    
+    // Join role-based rooms for efficient broadcasting
+    socket.join(`role_${userRole}`);
+    if (organizationId) {
+      socket.join(`org_${organizationId}`);
+    }
   }
 
   socket.on('join-room', (room) => {
@@ -164,6 +175,9 @@ io.on('connection', (socket) => {
   });
 
   socket.on('disconnect', (reason) => {
+    if (userId && userRole) {
+      socketOptimizer.unregisterUser(socket, userId, userRole);
+    }
     console.log('Client disconnected:', socket.id, 'Reason:', reason);
   });
 
@@ -171,6 +185,11 @@ io.on('connection', (socket) => {
     console.error('Socket connection error:', error);
   });
 });
+
+// PERFORMANCE: Clean up socket throttle every 5 minutes
+setInterval(() => {
+  socketOptimizer.cleanupThrottle();
+}, 5 * 60 * 1000);
 
 // MongoDB connection
 const connectDB = async () => {

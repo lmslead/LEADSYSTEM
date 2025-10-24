@@ -305,6 +305,38 @@ leadSchema.index({ phone: 1 });
 leadSchema.index({ isDuplicate: 1 });
 leadSchema.index({ duplicateOf: 1 });
 
+// PERFORMANCE OPTIMIZATION: Compound indexes for frequently used query combinations
+leadSchema.index({ organization: 1, status: 1 });
+leadSchema.index({ organization: 1, qualificationStatus: 1 });
+leadSchema.index({ organization: 1, createdAt: -1 });
+leadSchema.index({ assignedTo: 1, qualificationStatus: 1 });
+leadSchema.index({ assignedTo: 1, leadProgressStatus: 1 });
+leadSchema.index({ assignedTo: 1, adminProcessed: 1 });
+leadSchema.index({ assignedTo: 1, assignedAt: -1 });
+leadSchema.index({ createdBy: 1, organization: 1 });
+leadSchema.index({ status: 1, qualificationStatus: 1 });
+leadSchema.index({ organization: 1, status: 1, createdAt: -1 });
+leadSchema.index({ assignedTo: 1, qualificationStatus: 1, adminProcessed: 1 });
+
+// Text index for search functionality
+leadSchema.index({ 
+  name: 'text', 
+  email: 'text', 
+  phone: 'text', 
+  alternatePhone: 'text',
+  leadId: 'text',
+  company: 'text'
+}, {
+  weights: {
+    leadId: 10,
+    name: 5,
+    email: 3,
+    phone: 3,
+    company: 2,
+    alternatePhone: 1
+  }
+});
+
 // Function to generate unique lead ID using Eastern Time
 // New format: {ORG_PREFIX}{YYMMDD}{00000_SEQUENCE} (e.g., RED2509220001)
 const generateLeadId = async function() {
@@ -478,7 +510,13 @@ leadSchema.statics.getStatistics = async function() {
           $sum: { $cond: [{ $eq: ['$qualificationStatus', 'pending'] }, 1, 0] }
         },
         immediateEnrollmentLeads: {
-          $sum: { $cond: [{ $eq: ['$leadProgressStatus', 'SALE'] }, 1, 0] }
+          $sum: { 
+            $cond: [
+              { $in: ['$leadProgressStatus', ['SALE', 'Immediate Enrollment']] }, 
+              1, 
+              0
+            ] 
+          }
         }
       }
     }

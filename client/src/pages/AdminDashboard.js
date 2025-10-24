@@ -833,9 +833,9 @@ const AdminDashboard = () => {
     const hotLeads = allLeadsForStats.filter(lead => lead.category === 'hot').length;
     
     // Calculate conversion rate based on LEAD PROGRESS STATUS 'SALE' divided by qualified leads
-    // Formula: (No. of SALE leads (leadProgressStatus only) ÷ Qualified leads) × 100
+    // Formula: (No. of SALE + Immediate Enrollment leads (leadProgressStatus only) ÷ Qualified leads) × 100
     const immediateEnrollmentLeads = allLeadsForStats.filter(lead => 
-      lead.leadProgressStatus === 'SALE'
+      lead.leadProgressStatus === 'SALE' || lead.leadProgressStatus === 'Immediate Enrollment'
     ).length;
     
     // Get all unique leadProgressStatus values for debugging

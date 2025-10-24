@@ -190,44 +190,6 @@ const Agent2Dashboard = () => {
   const [customDisposition, setCustomDisposition] = useState('');
   const [showCustomDisposition, setShowCustomDisposition] = useState(false);
 
-  useEffect(() => {
-    fetchLeads(pagination.page);
-    
-    // Listen for real-time updates
-    const handleRefresh = () => fetchLeads(pagination.page);
-    window.addEventListener('refreshLeads', handleRefresh);
-
-    // Socket.IO event listeners for real-time updates (notifications disabled)
-    if (socket) {
-      const handleLeadUpdated = (data) => {
-        console.log('Lead updated via socket in Agent2:', data);
-        // No notification toast for agents
-        fetchLeads(pagination.page); // Refresh the leads list
-      };
-
-      const handleLeadCreated = (data) => {
-        console.log('New lead created via socket in Agent2:', data);
-        // No notification toast for agents
-        fetchLeads(pagination.page); // Refresh the leads list
-      };
-
-      socket.on('leadUpdated', handleLeadUpdated);
-      socket.on('leadCreated', handleLeadCreated);
-
-      // Cleanup socket listeners
-      return () => {
-        window.removeEventListener('refreshLeads', handleRefresh);
-        socket.off('leadUpdated', handleLeadUpdated);
-        socket.off('leadCreated', handleLeadCreated);
-      };
-    }
-    
-    return () => {
-      window.removeEventListener('refreshLeads', handleRefresh);
-    };
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [filters, socket]);
-
   const fetchLeads = useCallback(async (page = 1) => {
     try {
       const params = new URLSearchParams();
@@ -266,6 +228,44 @@ const Agent2Dashboard = () => {
       setLoading(false);
     }
   }, [pagination.limit, filters]);
+
+  // useEffect for fetching leads and setting up socket listeners
+  useEffect(() => {
+    fetchLeads(pagination.page);
+    
+    // Listen for real-time updates
+    const handleRefresh = () => fetchLeads(pagination.page);
+    window.addEventListener('refreshLeads', handleRefresh);
+
+    // Socket.IO event listeners for real-time updates (notifications disabled)
+    if (socket) {
+      const handleLeadUpdated = (data) => {
+        console.log('Lead updated via socket in Agent2:', data);
+        // No notification toast for agents
+        fetchLeads(pagination.page); // Refresh the leads list
+      };
+
+      const handleLeadCreated = (data) => {
+        console.log('New lead created via socket in Agent2:', data);
+        // No notification toast for agents
+        fetchLeads(pagination.page); // Refresh the leads list
+      };
+
+      socket.on('leadUpdated', handleLeadUpdated);
+      socket.on('leadCreated', handleLeadCreated);
+
+      // Cleanup socket listeners
+      return () => {
+        window.removeEventListener('refreshLeads', handleRefresh);
+        socket.off('leadUpdated', handleLeadUpdated);
+        socket.off('leadCreated', handleLeadCreated);
+      };
+    }
+    
+    return () => {
+      window.removeEventListener('refreshLeads', handleRefresh);
+    };
+  }, [fetchLeads, pagination.page, socket]);
 
   // Fetch persistent leads for Agent2 dashboard
   const fetchPersistentLeads = useCallback(async () => {
@@ -347,7 +347,7 @@ const Agent2Dashboard = () => {
   // Fetch persistent leads on component mount
   useEffect(() => {
     fetchPersistentLeads();
-  }, []); // Empty dependency array for mount only
+  }, [fetchPersistentLeads]); // Add fetchPersistentLeads to dependency array
 
   // Reset pagination when filters change
   const resetPaginationAndFetch = useCallback(() => {
@@ -1047,11 +1047,12 @@ const Agent2Dashboard = () => {
   // Handle debt type selection
   const handleCreateDebtTypeChange = (type) => {
     setCreateFormData(prev => {
+      const debtTypes = prev.debtTypes || [];
       return {
         ...prev,
-        debtTypes: prev.debtTypes.includes(type)
-          ? prev.debtTypes.filter(t => t !== type)
-          : [...prev.debtTypes, type]
+        debtTypes: debtTypes.includes(type)
+          ? debtTypes.filter(t => t !== type)
+          : [...debtTypes, type]
       };
     });
   };
@@ -1307,20 +1308,32 @@ const Agent2Dashboard = () => {
               <FileText className="h-5 w-5 text-blue-600" />
             </div>
             <div className="ml-3">
-              <p className="text-sm font-medium text-gray-600">Total</p>
+              <p className="text-sm font-medium text-gray-600">Today's Assigned</p>
               <p className="text-xl font-bold text-gray-900">{stats.total}</p>
             </div>
           </div>
         </div>
 
-        {/* <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
           <div className="flex items-center">
-            <div className="p-3 rounded-full bg-gray-100">
-              <AlertCircle className="h-5 w-5 text-gray-600" />
+            <div className="p-3 rounded-full bg-yellow-100">
+              <AlertCircle className="h-5 w-5 text-yellow-600" />
             </div>
             <div className="ml-3">
-              <p className="text-sm font-medium text-gray-600">New</p>
-              <p className="text-xl font-bold text-gray-900">{stats.newLeads}</p>
+              <p className="text-sm font-medium text-gray-600">Pending Qualification</p>
+              <p className="text-xl font-bold text-gray-900">{stats.pendingQualificationCount}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+          <div className="flex items-center">
+            <div className="p-3 rounded-full bg-orange-100">
+              <Clock className="h-5 w-5 text-orange-600" />
+            </div>
+            <div className="ml-3">
+              <p className="text-sm font-medium text-gray-600">Callback Needed</p>
+              <p className="text-xl font-bold text-gray-900">{stats.callbackNeededCount}</p>
             </div>
           </div>
         </div>
@@ -1331,8 +1344,8 @@ const Agent2Dashboard = () => {
               <CheckCircle className="h-5 w-5 text-green-600" />
             </div>
             <div className="ml-3">
-              <p className="text-sm font-medium text-gray-600">Interested</p>
-              <p className="text-xl font-bold text-gray-900">{stats.interested}</p>
+              <p className="text-sm font-medium text-gray-600">Follow Up</p>
+              <p className="text-xl font-bold text-gray-900">{stats.followUp}</p>
             </div>
           </div>
         </div>
@@ -1348,18 +1361,6 @@ const Agent2Dashboard = () => {
             </div>
           </div>
         </div>
-
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center">
-            <div className="p-3 rounded-full bg-blue-100">
-              <Clock className="h-5 w-5 text-blue-600" />
-            </div>
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-600">Follow Up</p>
-              <p className="text-xl font-bold text-gray-900">{stats.followUp}</p>
-            </div>
-          </div>
-        </div> */}
       </div>
 
       {/* Tabs Navigation */}
@@ -2440,22 +2441,23 @@ const Agent2Dashboard = () => {
                       <div>
                         <label className="block text-sm font-medium text-gray-700 mb-2">Debt Types</label>
                         <div className="space-y-2 max-h-32 overflow-y-auto border border-gray-300 rounded-md p-2">
-                          {DEBT_TYPES_BY_CATEGORY[editFormData.debtCategory].map((type) => (
+                          {(DEBT_TYPES_BY_CATEGORY[editFormData.debtCategory] || []).map((type) => (
                             <label key={type} className="flex items-center">
                               <input
                                 type="checkbox"
                                 className="rounded border-gray-300 text-primary-600 shadow-sm focus:border-primary-300 focus:ring focus:ring-primary-200 focus:ring-opacity-50"
-                                checked={editFormData.debtTypes.includes(type)}
+                                checked={editFormData.debtTypes && editFormData.debtTypes.includes(type)}
                                 onChange={(e) => {
+                                  const debtTypes = editFormData.debtTypes || [];
                                   if (e.target.checked) {
                                     setEditFormData({
                                       ...editFormData,
-                                      debtTypes: [...editFormData.debtTypes, type]
+                                      debtTypes: [...debtTypes, type]
                                     });
                                   } else {
                                     setEditFormData({
                                       ...editFormData,
-                                      debtTypes: editFormData.debtTypes.filter(t => t !== type)
+                                      debtTypes: debtTypes.filter(t => t !== type)
                                     });
                                   }
                                 }}
@@ -2730,11 +2732,11 @@ const Agent2Dashboard = () => {
                   <div>
                     <label className="block text-sm font-semibold text-gray-700 mb-3">Select Debt Types</label>
                     <div className="grid grid-cols-1 md:grid-cols-2 gap-3 max-h-48 overflow-y-auto border border-gray-200 rounded-lg p-4 bg-gray-50">
-                      {DEBT_TYPES_BY_CATEGORY[createFormData.debtCategory].map((type) => (
+                      {(DEBT_TYPES_BY_CATEGORY[createFormData.debtCategory] || []).map((type) => (
                         <label key={type} className="flex items-center space-x-3 cursor-pointer">
                           <input
                             type="checkbox"
-                            checked={createFormData.debtTypes.includes(type)}
+                            checked={createFormData.debtTypes && createFormData.debtTypes.includes(type)}
                             onChange={() => handleCreateDebtTypeChange(type)}
                             className="h-4 w-4 text-primary-600 focus:ring-primary-500 border-gray-300 rounded"
                           />
