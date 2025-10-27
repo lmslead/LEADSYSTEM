@@ -12,7 +12,7 @@ import axios from '../utils/axios';
 import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Pagination from '../components/Pagination';
-import { getEasternNow, formatEasternTimeForDisplay, getEasternStartOfDay, getEasternEndOfDay } from '../utils/dateUtils';
+import { formatEasternTimeForDisplay, getEasternStartOfDay, getEasternEndOfDay } from '../utils/dateUtils';
 
 const Agent1Dashboard = () => {
   const { user } = useAuth();

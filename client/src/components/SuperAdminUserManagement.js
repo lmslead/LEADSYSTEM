@@ -4,7 +4,6 @@ import axios from '../utils/axios';
 import toast from 'react-hot-toast';
 import LoadingSpinner from './LoadingSpinner';
 import CreateAgentModal from './CreateAgentModal';
-import { useAuth } from '../contexts/AuthContext';
 
 const SuperAdminUserManagement = () => {
   const [users, setUsers] = useState([]);

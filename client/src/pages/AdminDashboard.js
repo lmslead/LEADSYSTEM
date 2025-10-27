@@ -1,7 +1,6 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { 
   BarChart3, 
-  TrendingUp,
   Users, 
   Calendar,
   Target,
@@ -29,10 +28,7 @@ import { useRefresh } from '../contexts/RefreshContext';
 import { scrollToTop } from '../utils/scrollUtils';
 import { 
   formatEasternTimeForDisplay, 
-  getEasternNow, 
-  getEasternStartOfDay,
-  getEasternEndOfDay,
-  toEasternTime 
+  getEasternNow
 } from '../utils/dateUtils';
 
 const AdminDashboard = () => {
@@ -166,7 +162,7 @@ const AdminDashboard = () => {
 
 
 
-  const fetchStats = async (silent = false) => {
+  const fetchStats = useCallback(async (silent = false) => {
     if (!silent) {
       setRefreshing(true);
     }
@@ -189,7 +185,7 @@ const AdminDashboard = () => {
         setLoading(false);
       }
     }
-  };
+  }, []);
 
   // Fetch all leads for stats calculation (handles large datasets up to lakhs)
   const fetchAllLeadsForStats = useCallback(async () => {
@@ -249,6 +245,9 @@ const AdminDashboard = () => {
     }
   }, []);
 
+  // Request deduplication - prevent multiple identical API calls
+  const pendingRequestsRef = useRef(new Map());
+
   const fetchLeads = useCallback(async (silent = false, page = pagination.page) => {
     try {
       console.log('Admin Dashboard: Fetching leads...');
@@ -278,28 +277,56 @@ const AdminDashboard = () => {
         }
       }
       
-      const response = await axios.get(url);
-      const responseData = response.data?.data;
-      const leadsData = responseData?.leads;
-      const paginationData = responseData?.pagination;
+      // Generate a unique key for this request (excluding timestamp)
+      const requestKey = url.split('&_t=')[0];
       
-      setLeads(Array.isArray(leadsData) ? leadsData : []);
-      
-      // Update pagination state if we have pagination data
-      if (paginationData) {
-        setPagination({
-          page: paginationData.page,
-          limit: paginationData.limit,
-          total: paginationData.total,
-          pages: paginationData.pages
-        });
+      // If same request is already pending, return the existing promise
+      if (pendingRequestsRef.current.has(requestKey)) {
+        console.log('Request deduplication: Reusing pending request');
+        return pendingRequestsRef.current.get(requestKey);
       }
+      
+      // Create new request promise
+      const requestPromise = (async () => {
+        try {
+          const response = await axios.get(url);
+          const responseData = response.data?.data;
+          const leadsData = responseData?.leads;
+          const paginationData = responseData?.pagination;
+          
+          setLeads(Array.isArray(leadsData) ? leadsData : []);
+          
+          // Update pagination state if we have pagination data
+          if (paginationData) {
+            setPagination({
+              page: paginationData.page,
+              limit: paginationData.limit,
+              total: paginationData.total,
+              pages: paginationData.pages
+            });
+          }
+          
+          return { success: true };
+        } catch (error) {
+          console.error('Error fetching leads:', error);
+          if (!silent) {
+            toast.error('Failed to fetch leads');
+          }
+          setLeads([]);
+          return { success: false, error };
+        } finally {
+          // Remove from pending requests after completion
+          pendingRequestsRef.current.delete(requestKey);
+        }
+      })();
+      
+      // Store the promise
+      pendingRequestsRef.current.set(requestKey, requestPromise);
+      
+      return requestPromise;
     } catch (error) {
-      console.error('Error fetching leads:', error);
-      if (!silent) {
-        toast.error('Failed to fetch leads');
-      }
-      setLeads([]);
+      console.error('Unexpected error in fetchLeads:', error);
+      return { success: false, error };
     }
   }, [pagination.page, pagination.limit, qualificationFilter, duplicateFilter, organizationFilter, dateFilter]);
 
@@ -521,10 +548,33 @@ const AdminDashboard = () => {
     return isReddington;
   }, [user]);
 
-  // Socket.IO event listeners for real-time updates
+  // Socket.IO event listeners for real-time updates with debouncing
   useEffect(() => {
     if (socket) {
       console.log('Admin Dashboard: Setting up socket listeners');
+      
+      // Debounce timeout references
+      const socketDebounceRef = { timeout: null };
+      
+      const debouncedRefresh = () => {
+        // Clear existing timeout
+        if (socketDebounceRef.timeout) {
+          clearTimeout(socketDebounceRef.timeout);
+        }
+        
+        // Debounce refreshes to prevent excessive API calls
+        socketDebounceRef.timeout = setTimeout(() => {
+          fetchStats(true);
+          // Only refresh all leads for smaller datasets to avoid performance issues
+          if (!stats || stats.totalLeads <= 10000) {
+            fetchAllLeadsForStats();
+          }
+          if (showLeadsSection) {
+            fetchLeads(true);
+          }
+          setLastUpdated(getEasternNow());
+        }, 1000); // Wait 1 second before refreshing
+      };
       
       const handleLeadUpdated = (data) => {
         console.log('Lead updated via socket:', data);
@@ -535,16 +585,7 @@ const AdminDashboard = () => {
             icon: '🔄'
           });
         }
-        // Always refresh stats
-        fetchStats(true);
-        // Only refresh all leads for smaller datasets to avoid performance issues
-        if (!stats || stats.totalLeads <= 10000) {
-          fetchAllLeadsForStats();
-        }
-        if (showLeadsSection) {
-          fetchLeads(true);
-        }
-        setLastUpdated(getEasternNow());
+        debouncedRefresh();
       };
 
       const handleLeadCreated = (data) => {
@@ -556,16 +597,7 @@ const AdminDashboard = () => {
             icon: '✅'
           });
         }
-        // Always refresh stats
-        fetchStats(true);
-        // Only refresh all leads for smaller datasets to avoid performance issues
-        if (!stats || stats.totalLeads <= 10000) {
-          fetchAllLeadsForStats();
-        }
-        if (showLeadsSection) {
-          fetchLeads(true);
-        }
-        setLastUpdated(getEasternNow());
+        debouncedRefresh();
       };
 
       const handleLeadDeleted = (data) => {
@@ -577,34 +609,29 @@ const AdminDashboard = () => {
             icon: '🗑️'
           });
         }
-        // Always refresh stats
-        fetchStats(true);
-        // Only refresh all leads for smaller datasets to avoid performance issues
-        if (!stats || stats.totalLeads <= 10000) {
-          fetchAllLeadsForStats();
-        }
-        if (showLeadsSection) {
-          fetchLeads(true);
-        }
-        setLastUpdated(getEasternNow());
+        debouncedRefresh();
       };
 
       socket.on('leadUpdated', handleLeadUpdated);
       socket.on('leadCreated', handleLeadCreated);
       socket.on('leadDeleted', handleLeadDeleted);
 
-      // Cleanup socket listeners
+      // Cleanup socket listeners and timeout
       return () => {
+        if (socketDebounceRef.timeout) {
+          clearTimeout(socketDebounceRef.timeout);
+        }
         socket.off('leadUpdated', handleLeadUpdated);
         socket.off('leadCreated', handleLeadCreated);
         socket.off('leadDeleted', handleLeadDeleted);
       };
     }
-  }, [socket, showLeadsSection, fetchLeads, fetchAllLeadsForStats, stats, isReddingtonAdmin]);
+  }, [socket, showLeadsSection, fetchLeads, fetchAllLeadsForStats, stats, isReddingtonAdmin, fetchStats]);
 
-  // Search functionality
-  const handleSearch = useCallback((term) => {
-    setSearchTerm(term);
+  // Search functionality with debouncing to prevent excessive filtering
+  const searchTimeoutRef = useRef(null);
+  
+  const performSearch = useCallback((term) => {
     if (!term.trim()) {
       setSearchResults([]);
       return;
@@ -624,12 +651,32 @@ const AdminDashboard = () => {
     setSearchResults(filtered);
   }, [leads]);
 
+  const handleSearch = useCallback((term) => {
+    setSearchTerm(term);
+    
+    // Clear existing timeout
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+    
+    // If search is empty, clear immediately
+    if (!term.trim()) {
+      setSearchResults([]);
+      return;
+    }
+    
+    // Debounce the actual search by 300ms
+    searchTimeoutRef.current = setTimeout(() => {
+      performSearch(term);
+    }, 300);
+  }, [performSearch]);
+
   // Update search results when leads change
   useEffect(() => {
     if (searchTerm.trim()) {
-      handleSearch(searchTerm);
+      performSearch(searchTerm);
     }
-  }, [leads, handleSearch, searchTerm]);
+  }, [leads, performSearch, searchTerm]);
 
   // Lead update functionality
   const handleEditToggle = () => {
@@ -883,6 +930,26 @@ const AdminDashboard = () => {
     };
   }, [allLeadsForStats, stats]);
 
+  // Get real-time stats - Memoized to prevent recalculation on every render
+  // Must be called before any early returns (React Hooks rule)
+  const realTimeStats = useMemo(() => {
+    // Add null check inside the memoized function
+    if (!stats && !allLeadsForStats) {
+      return { qualificationRate: 0, conversionRate: 0 };
+    }
+    return calculateRealTimeStats();
+  }, [calculateRealTimeStats, stats, allLeadsForStats]);
+  
+  const qualificationRate = parseFloat(realTimeStats?.qualificationRate) || 0;
+  const conversionRate = parseFloat(realTimeStats?.conversionRate) || 0;
+
+  // Apply search filter only (backend handles date/qualification/duplicate/org filters)
+  // Search is client-side for immediate feedback as user types
+  // Memoized to prevent recalculation when props don't change
+  const displayLeads = useMemo(() => {
+    return searchTerm.trim() ? searchResults : leads;
+  }, [searchTerm, searchResults, leads]);
+
   if (loading) {
     return <LoadingSpinner message="Loading admin dashboard..." />;
   }
@@ -901,150 +968,184 @@ const AdminDashboard = () => {
     );
   }
 
-  // Get real-time stats
-  const realTimeStats = calculateRealTimeStats();
-  const qualificationRate = parseFloat(realTimeStats.qualificationRate) || 0;
-  const conversionRate = parseFloat(realTimeStats.conversionRate) || 0;
-
-  // Apply search filter only (backend handles date/qualification/duplicate/org filters)
-  // Search is client-side for immediate feedback as user types
-  const displayLeads = searchTerm.trim() ? searchResults : leads;
-
   return (
-    <div className="min-h-screen bg-gradient-to-br from-blue-50 via-white to-purple-50 py-10 px-2">
-      <div className="max-w-7xl mx-auto space-y-8">
+    <div className="min-h-screen bg-gradient-to-br from-slate-50 via-blue-50 to-indigo-50 py-4 px-3">
+      <div className="w-full space-y-3">
         {/* Header */}
-        <div className="flex flex-col md:flex-row justify-between items-center gap-4">
-          <div>
-            <h1 className="text-3xl font-bold text-gray-900 tracking-tight">Admin Dashboard</h1>
-            <p className="text-gray-600 mt-1">Real-time lead management overview <span className="font-semibold text-blue-600">(Read-only access)</span></p>
-          </div>
-          <div className="flex items-center space-x-4">
-            <div className="text-sm text-gray-500">
-              Last updated: <span className="font-semibold">{formatEasternTimeForDisplay(lastUpdated, { includeTimezone: true })}</span>
+        <div className="bg-white rounded-xl shadow-lg border border-gray-100 p-4 backdrop-blur-sm bg-opacity-95">
+          <div className="flex flex-col md:flex-row justify-between items-center gap-3">
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg shadow-lg">
+                <BarChart3 className="h-6 w-6 text-white" />
+              </div>
+              <div>
+                <h1 className="text-2xl font-bold bg-gradient-to-r from-blue-600 to-indigo-600 bg-clip-text text-transparent tracking-tight">
+                  Admin Dashboard
+                </h1>
+                <p className="text-gray-600 text-xs">
+                  Real-time lead management 
+                  <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                    Read-only
+                  </span>
+                </p>
+              </div>
             </div>
-            <button
-              onClick={handleRefresh}
-              disabled={refreshing}
-              className="flex items-center px-5 py-2 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-semibold shadow-lg hover:scale-105 hover:from-blue-700 hover:to-purple-700 disabled:opacity-50 transition-all duration-200"
-            >
-              <RefreshCw className={`h-4 w-4 mr-2 ${refreshing ? 'animate-spin' : ''}`} />
-              {refreshing ? 'Refreshing...' : 'Refresh'}
-            </button>
+            <div className="flex items-center gap-3">
+              <div className="text-right">
+                <p className="text-xs text-gray-500 uppercase tracking-wide">Last Updated</p>
+                <p className="text-xs font-semibold text-gray-700">
+                  {formatEasternTimeForDisplay(lastUpdated, { includeTimezone: true })}
+                </p>
+              </div>
+              <button
+                onClick={handleRefresh}
+                disabled={refreshing}
+                className="flex items-center px-4 py-2 bg-gradient-to-r from-blue-600 to-indigo-600 text-white rounded-lg font-semibold shadow-lg hover:shadow-xl hover:scale-105 disabled:opacity-50 disabled:cursor-not-allowed transition-all duration-200 group text-sm"
+              >
+                <RefreshCw className={`h-4 w-4 mr-1.5 ${refreshing ? 'animate-spin' : 'group-hover:rotate-180'} transition-transform duration-500`} />
+                {refreshing ? 'Refreshing...' : 'Refresh'}
+              </button>
+            </div>
           </div>
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 xl:grid-cols-6 gap-8">
-          <div className="bg-white p-7 rounded-2xl shadow-xl border border-gray-100 flex items-center gap-4">
-            <div className="p-4 rounded-full bg-blue-100">
-              <BarChart3 className="h-7 w-7 text-blue-600" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Total Leads</p>
-              <p className="text-3xl font-bold text-gray-900">{realTimeStats.totalLeads}</p>
-            </div>
-          </div>
-
-          {/* <div className="bg-white p-7 rounded-2xl shadow-xl border border-gray-100 flex items-center gap-4">
-            <div className="p-4 rounded-full bg-green-100">
-              <TrendingUp className="h-7 w-7 text-green-600" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Hot Leads</p>
-              <p className="text-3xl font-bold text-gray-900">{stats.hotLeads}</p>
-            </div>
-          </div> */}
-
-          <div className="bg-white p-7 rounded-2xl shadow-xl border border-gray-100 flex items-center gap-4">
-            <div className="p-4 rounded-full bg-emerald-100">
-              <CheckCircle className="h-7 w-7 text-emerald-600" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Qualified</p>
-              <p className="text-3xl font-bold text-gray-900">{realTimeStats.qualifiedLeads || 0}</p>
-              <p className="text-xs text-emerald-600 font-medium">{qualificationRate.toFixed(1)}%</p>
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+          {/* Total Leads Card */}
+          <div className="group bg-white p-4 rounded-xl shadow-md hover:shadow-xl border border-gray-100 transition-all duration-300 hover:-translate-y-1 cursor-pointer">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-gradient-to-br from-blue-100 to-blue-200 group-hover:from-blue-500 group-hover:to-blue-600 transition-all duration-300">
+                <BarChart3 className="h-5 w-5 text-blue-600 group-hover:text-white transition-colors duration-300" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total</p>
+                <p className="text-xl font-bold text-gray-900">{realTimeStats.totalLeads}</p>
+              </div>
             </div>
           </div>
 
-          <div className="bg-white p-7 rounded-2xl shadow-xl border border-gray-100 flex items-center gap-4">
-            <div className="p-4 rounded-full bg-red-100">
-              <XCircle className="h-7 w-7 text-red-600" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Not - Qualified</p>
-              <p className="text-3xl font-bold text-gray-900">{realTimeStats.notQualifiedLeads || 0}</p>
-            </div>
-          </div>
-
-          <div className="bg-white p-7 rounded-2xl shadow-xl border border-gray-100 flex items-center gap-4">
-            <div className="p-4 rounded-full bg-orange-100">
-              <Clock className="h-7 w-7 text-orange-600" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Pending</p>
-              <p className="text-3xl font-bold text-gray-900">{realTimeStats.pendingLeads || 0}</p>
+          {/* Qualified Card */}
+          <div className="group bg-white p-4 rounded-xl shadow-md hover:shadow-xl border border-gray-100 transition-all duration-300 hover:-translate-y-1 cursor-pointer">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-gradient-to-br from-emerald-100 to-emerald-200 group-hover:from-emerald-500 group-hover:to-emerald-600 transition-all duration-300">
+                <CheckCircle className="h-5 w-5 text-emerald-600 group-hover:text-white transition-colors duration-300" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Qualified</p>
+                <div className="flex items-end gap-1">
+                  <p className="text-xl font-bold text-gray-900">{realTimeStats.qualifiedLeads || 0}</p>
+                  <span className="text-xs font-bold text-emerald-600">{qualificationRate.toFixed(1)}%</span>
+                </div>
+              </div>
             </div>
           </div>
 
-          <div className="bg-white p-7 rounded-2xl shadow-xl border border-gray-100 flex items-center gap-4">
-            <div className="p-4 rounded-full bg-yellow-100">
-              <Target className="h-7 w-7 text-yellow-600" />
-            </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Conversion Rate</p>
-              <p className="text-3xl font-bold text-gray-900">{conversionRate.toFixed(2)}%</p>
-              <p className="text-xs text-gray-500">
-                {realTimeStats.immediateEnrollmentLeads || 0} SALE / {realTimeStats.qualifiedLeads || 0} Qualified
-              </p>
-              {(realTimeStats.immediateEnrollmentLeads || 0) === 0 && (
-                <p className="text-xs text-orange-500 mt-1">No SALE leads yet</p>
-              )}
+          {/* Not Qualified Card */}
+          <div className="group bg-white p-4 rounded-xl shadow-md hover:shadow-xl border border-gray-100 transition-all duration-300 hover:-translate-y-1 cursor-pointer">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-gradient-to-br from-red-100 to-red-200 group-hover:from-red-500 group-hover:to-red-600 transition-all duration-300">
+                <XCircle className="h-5 w-5 text-red-600 group-hover:text-white transition-colors duration-300" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Not Qualified</p>
+                <p className="text-xl font-bold text-gray-900">{realTimeStats.notQualifiedLeads || 0}</p>
+              </div>
             </div>
           </div>
 
-          <div className="bg-white p-7 rounded-2xl shadow-xl border border-gray-100 flex items-center gap-4">
-            <div className="p-4 rounded-full bg-purple-100">
-              <Users className="h-7 w-7 text-purple-600" />
+          {/* Pending Card */}
+          <div className="group bg-white p-4 rounded-xl shadow-md hover:shadow-xl border border-gray-100 transition-all duration-300 hover:-translate-y-1 cursor-pointer">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-gradient-to-br from-amber-100 to-amber-200 group-hover:from-amber-500 group-hover:to-amber-600 transition-all duration-300">
+                <Clock className="h-5 w-5 text-amber-600 group-hover:text-white transition-colors duration-300" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Pending</p>
+                <p className="text-xl font-bold text-gray-900">{realTimeStats.pendingLeads || 0}</p>
+              </div>
             </div>
-            <div>
-              <p className="text-sm font-medium text-gray-600">Active Agents</p>
-              <p className="text-3xl font-bold text-gray-900">{realTimeStats.activeAgents || 0}</p>
+          </div>
+
+          {/* Conversion Rate Card */}
+          <div className="group bg-white p-4 rounded-xl shadow-md hover:shadow-xl border border-gray-100 transition-all duration-300 hover:-translate-y-1 cursor-pointer">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-gradient-to-br from-purple-100 to-purple-200 group-hover:from-purple-500 group-hover:to-purple-600 transition-all duration-300">
+                <Target className="h-5 w-5 text-purple-600 group-hover:text-white transition-colors duration-300" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Conversion</p>
+                <p className="text-xl font-bold text-gray-900">{conversionRate.toFixed(2)}%</p>
+                <p className="text-xs text-gray-500">
+                  {realTimeStats.immediateEnrollmentLeads || 0}/{realTimeStats.qualifiedLeads || 0}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Active Agents Card */}
+          <div className="group bg-white p-4 rounded-xl shadow-md hover:shadow-xl border border-gray-100 transition-all duration-300 hover:-translate-y-1 cursor-pointer">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-gradient-to-br from-indigo-100 to-indigo-200 group-hover:from-indigo-500 group-hover:to-indigo-600 transition-all duration-300">
+                <Users className="h-5 w-5 text-indigo-600 group-hover:text-white transition-colors duration-300" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Agents</p>
+                <p className="text-xl font-bold text-gray-900">{realTimeStats.activeAgents || 0}</p>
+              </div>
             </div>
           </div>
         </div>
 
         {/* Lead Management Toggle */}
-        <div className="bg-white p-7 rounded-2xl shadow-xl border border-gray-100 flex items-center justify-between">
-          <div>
-            <h3 className="text-xl font-semibold text-gray-900">Lead Management</h3>
-            <p className="text-sm text-gray-600">View all leads and observe agent actions <span className="font-semibold text-blue-600">(Admin has read-only access)</span></p>
+        <div className="bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden backdrop-blur-sm bg-opacity-95">
+          <div className="bg-gradient-to-r from-blue-500 to-indigo-600 p-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-3">
+                <div className="p-2 bg-white/20 backdrop-blur-sm rounded-lg">
+                  <Users className="h-5 w-5 text-white" />
+                </div>
+                <div>
+                  <h3 className="text-lg font-bold text-white">Lead Management</h3>
+                  <p className="text-xs text-blue-100">
+                    View all leads and agent actions
+                    <span className="ml-2 inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-white/20 text-white backdrop-blur-sm">
+                      Read-only
+                    </span>
+                  </p>
+                </div>
+              </div>
+              <button
+                onClick={() => setShowLeadsSection(!showLeadsSection)}
+                className="px-4 py-2 bg-white text-blue-600 rounded-lg font-semibold shadow-lg hover:shadow-xl hover:scale-105 transition-all duration-200 flex items-center gap-2 group text-sm"
+              >
+                <span>{showLeadsSection ? 'Hide Leads' : 'Show Leads'}</span>
+                <svg 
+                  className={`h-4 w-4 transition-transform duration-300 ${showLeadsSection ? 'rotate-180' : ''}`}
+                  fill="none" 
+                  stroke="currentColor" 
+                  viewBox="0 0 24 24"
+                >
+                  <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+                </svg>
+              </button>
+            </div>
           </div>
-          <button
-            onClick={() => setShowLeadsSection(!showLeadsSection)}
-            className="px-6 py-3 bg-gradient-to-r from-blue-600 to-purple-600 text-white rounded-xl font-semibold shadow-lg hover:scale-105 transition-all duration-200"
-          >
-            {showLeadsSection ? 'Hide Leads' : 'Show Leads'}
-          </button>
         </div>
 
         {/* Search Bar - Only for REDDINGTON GLOBAL CONSULTANCY admins */}
         {showLeadsSection && (
-          <div className="bg-yellow-100 p-2 rounded-lg text-sm text-gray-800 mb-4">
-            {/* Debug: User={user?.name}, Org={user?.organization?.name}, IsReddington={isReddingtonAdmin()} */}
-          </div>
-        )}
-        {showLeadsSection && (
-          <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+          <div className="bg-white rounded-xl shadow-md border border-gray-100 p-3 backdrop-blur-sm bg-opacity-95">
             <div className="flex items-center gap-3">
-              <Search className="h-5 w-5 text-gray-400" />
+              <div className="p-2 bg-gradient-to-br from-purple-100 to-purple-200 rounded-lg">
+                <Search className="h-4 w-4 text-purple-600" />
+              </div>
               <div className="flex-1">
                 <input
                   type="text"
                   placeholder="Search leads by name, phone, email, or lead ID..."
                   value={searchTerm}
                   onChange={(e) => handleSearch(e.target.value)}
-                  className="w-full px-4 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-colors"
+                  className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all duration-200 text-sm placeholder-gray-400"
                 />
               </div>
               {searchTerm && (
@@ -1053,107 +1154,114 @@ const AdminDashboard = () => {
                     setSearchTerm('');
                     setSearchResults([]);
                   }}
-                  className="p-2 text-gray-400 hover:text-gray-600 transition-colors"
+                  className="p-2 text-gray-400 hover:text-gray-600 hover:bg-gray-100 rounded-lg transition-all duration-200"
                 >
                   <X className="h-4 w-4" />
                 </button>
               )}
             </div>
             {searchTerm && (
-              <p className="text-sm text-gray-600 mt-2">
-                Found {searchResults.length} lead{searchResults.length !== 1 ? 's' : ''} matching "{searchTerm}"
-              </p>
+              <div className="mt-2 flex items-center gap-2">
+                <div className="h-1 w-1 rounded-full bg-blue-500"></div>
+                <p className="text-xs text-gray-600">
+                  Found <span className="font-semibold text-blue-600">{searchResults.length}</span> lead{searchResults.length !== 1 ? 's' : ''} matching <span className="font-medium">"{searchTerm}"</span>
+                </p>
+              </div>
             )}
           </div>
         )}
 
       {/* Compact Filter Controls - ONLY FOR ADMIN */}
       {showLeadsSection && (
-        <div className="bg-white p-3 rounded-lg shadow-sm border border-gray-200 space-y-3">
+        <div className="bg-white rounded-xl shadow-md border border-gray-100 p-3 backdrop-blur-sm bg-opacity-95 space-y-3">
           {/* Date Filter Row */}
           <div className="flex flex-wrap items-center gap-3">
             <div className="flex items-center gap-2">
-              <Calendar className="h-4 w-4 text-gray-500" />
-              <span className="text-sm font-medium text-gray-700">Date:</span>
+              <div className="p-1.5 bg-gradient-to-br from-blue-100 to-blue-200 rounded-lg">
+                <Calendar className="h-3.5 w-3.5 text-blue-600" />
+              </div>
+              <span className="text-xs font-semibold text-gray-700">Date:</span>
             </div>
             
-            <div className="flex flex-wrap gap-1">
+            <div className="flex flex-wrap gap-1.5">
               <button
                 onClick={() => handleDateFilterChange('all')}
-                className={`px-2 py-1 text-xs rounded transition-colors ${
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all duration-200 ${
                   dateFilter.filterType === 'all' 
-                    ? 'bg-primary-600 text-white' 
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md scale-105' 
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:scale-105'
                 }`}
               >
                 All
               </button>
               <button
                 onClick={() => handleDateFilterChange('today')}
-                className={`px-2 py-1 text-xs rounded transition-colors ${
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all duration-200 ${
                   dateFilter.filterType === 'today' 
-                    ? 'bg-primary-600 text-white' 
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md scale-105' 
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:scale-105'
                 }`}
               >
                 Today
               </button>
               <button
                 onClick={() => handleDateFilterChange('week')}
-                className={`px-2 py-1 text-xs rounded transition-colors ${
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all duration-200 ${
                   dateFilter.filterType === 'week' 
-                    ? 'bg-primary-600 text-white' 
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md scale-105' 
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:scale-105'
                 }`}
               >
                 7 Days
               </button>
               <button
                 onClick={() => handleDateFilterChange('month')}
-                className={`px-2 py-1 text-xs rounded transition-colors ${
+                className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all duration-200 ${
                   dateFilter.filterType === 'month' 
-                    ? 'bg-primary-600 text-white' 
-                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                    ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md scale-105' 
+                    : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:scale-105'
                 }`}
               >
                 30 Days
               </button>
             </div>
 
-            <div className="flex items-center gap-2 ml-4">
-              <span className="text-xs text-gray-600">Custom:</span>
+            <div className="flex items-center gap-2 ml-2 bg-gray-50 rounded-lg px-3 py-1.5">
+              <span className="text-xs font-semibold text-gray-600">Custom:</span>
               <input
                 type="date"
                 value={dateFilter.startDate}
                 onChange={(e) => handleDateFilterChange('custom', e.target.value, dateFilter.endDate)}
-                className="px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-primary-500 focus:border-transparent"
+                className="px-2 py-1 text-xs border-2 border-gray-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
               />
-              <span className="text-xs text-gray-500">to</span>
+              <span className="text-xs text-gray-400 font-medium">to</span>
               <input
                 type="date"
                 value={dateFilter.endDate}
                 onChange={(e) => handleDateFilterChange('custom', dateFilter.startDate, e.target.value)}
-                className="px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-primary-500 focus:border-transparent"
+                className="px-2 py-1 text-xs border-2 border-gray-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200"
               />
             </div>
           </div>
           
           {/* Other Filters Row */}
-          <div className="flex flex-wrap items-center gap-6">
+          <div className="flex flex-wrap items-center gap-4">
             {/* Qualification Filter */}
             <div className="flex items-center gap-2">
-              <Target className="h-4 w-4 text-gray-500" />
-              <span className="text-sm font-medium text-gray-700">Qualification:</span>
-              <div className="flex gap-1">
+              <div className="p-1.5 bg-gradient-to-br from-emerald-100 to-emerald-200 rounded-lg">
+                <Target className="h-3.5 w-3.5 text-emerald-600" />
+              </div>
+              <span className="text-xs font-semibold text-gray-700">Qualification:</span>
+              <div className="flex gap-1.5">
                 <button
                   onClick={() => {
                     setQualificationFilter('all');
                     resetPaginationAndFetch();
                   }}
-                  className={`px-2 py-1 text-xs rounded transition-colors ${
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all duration-200 ${
                     qualificationFilter === 'all' 
-                      ? 'bg-primary-600 text-white' 
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md scale-105' 
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:scale-105'
                   }`}
                 >
                   All
@@ -1163,10 +1271,10 @@ const AdminDashboard = () => {
                     setQualificationFilter('qualified');
                     resetPaginationAndFetch();
                   }}
-                  className={`px-2 py-1 text-xs rounded transition-colors ${
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all duration-200 ${
                     qualificationFilter === 'qualified' 
-                      ? 'bg-green-600 text-white' 
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      ? 'bg-gradient-to-r from-emerald-600 to-emerald-600 text-white shadow-md scale-105' 
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:scale-105'
                   }`}
                 >
                   Qualified
@@ -1176,23 +1284,23 @@ const AdminDashboard = () => {
                     setQualificationFilter('not-qualified');
                     resetPaginationAndFetch();
                   }}
-                  className={`px-2 py-1 text-xs rounded transition-colors ${
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all duration-200 ${
                     qualificationFilter === 'not-qualified' 
-                      ? 'bg-red-600 text-white' 
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      ? 'bg-gradient-to-r from-red-600 to-red-600 text-white shadow-md scale-105' 
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:scale-105'
                   }`}
                 >
-                  Not - Qualified
+                  Not Qualified
                 </button>
                 <button
                   onClick={() => {
                     setQualificationFilter('pending');
                     resetPaginationAndFetch();
                   }}
-                  className={`px-2 py-1 text-xs rounded transition-colors ${
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all duration-200 ${
                     qualificationFilter === 'pending' 
-                      ? 'bg-yellow-600 text-white' 
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      ? 'bg-gradient-to-r from-amber-600 to-amber-600 text-white shadow-md scale-105' 
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:scale-105'
                   }`}
                 >
                   Pending
@@ -1202,17 +1310,20 @@ const AdminDashboard = () => {
             
             {/* Duplicate Status Filter */}
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-gray-700">Duplicates:</span>
-              <div className="flex gap-1">
+              <div className="p-1.5 bg-gradient-to-br from-amber-100 to-amber-200 rounded-lg">
+                <AlertCircle className="h-3.5 w-3.5 text-amber-600" />
+              </div>
+              <span className="text-xs font-semibold text-gray-700">Dups:</span>
+              <div className="flex gap-1.5">
                 <button
                   onClick={() => {
                     setDuplicateFilter('all');
                     resetPaginationAndFetch();
                   }}
-                  className={`px-2 py-1 text-xs rounded transition-colors ${
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all duration-200 ${
                     duplicateFilter === 'all' 
-                      ? 'bg-primary-600 text-white' 
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md scale-105' 
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:scale-105'
                   }`}
                 >
                   All
@@ -1222,10 +1333,10 @@ const AdminDashboard = () => {
                     setDuplicateFilter('duplicates');
                     resetPaginationAndFetch();
                   }}
-                  className={`px-2 py-1 text-xs rounded transition-colors ${
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all duration-200 ${
                     duplicateFilter === 'duplicates' 
-                      ? 'bg-yellow-600 text-white' 
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      ? 'bg-gradient-to-r from-amber-600 to-amber-600 text-white shadow-md scale-105' 
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:scale-105'
                   }`}
                 >
                   Dups Only
@@ -1235,59 +1346,62 @@ const AdminDashboard = () => {
                     setDuplicateFilter('non-duplicates');
                     resetPaginationAndFetch();
                   }}
-                  className={`px-2 py-1 text-xs rounded transition-colors ${
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all duration-200 ${
                     duplicateFilter === 'non-duplicates' 
-                      ? 'bg-green-600 text-white' 
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      ? 'bg-gradient-to-r from-emerald-600 to-emerald-600 text-white shadow-md scale-105' 
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:scale-105'
                   }`}
                 >
-                  Original Only
+                  Original
                 </button>
               </div>
             </div>
             
             {/* Organization Filter */}
             <div className="flex items-center gap-2">
-              <span className="text-sm font-medium text-gray-700">Org:</span>
-              <div className="flex gap-1 max-w-md overflow-x-auto">
+              <div className="p-1.5 bg-gradient-to-br from-purple-100 to-purple-200 rounded-lg">
+                <Users className="h-3.5 w-3.5 text-purple-600" />
+              </div>
+              <span className="text-xs font-semibold text-gray-700">Org:</span>
+              <div className="flex gap-1.5 items-center">
                 <button
                   onClick={() => {
                     setOrganizationFilter('all');
                     resetPaginationAndFetch();
                   }}
-                  className={`px-2 py-1 text-xs rounded whitespace-nowrap transition-colors ${
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg whitespace-nowrap transition-all duration-200 ${
                     organizationFilter === 'all' 
-                      ? 'bg-primary-600 text-white' 
-                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                      ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md scale-105' 
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:scale-105'
                   }`}
                 >
                   All
                 </button>
-                {organizations.slice(0, 3).map((org) => (
+                {organizations.slice(0, 2).map((org) => (
                   <button
                     key={org._id}
                     onClick={() => {
                       setOrganizationFilter(org._id);
                       resetPaginationAndFetch();
                     }}
-                    className={`px-2 py-1 text-xs rounded whitespace-nowrap transition-colors ${
+                    className={`px-3 py-1.5 text-xs font-semibold rounded-lg whitespace-nowrap transition-all duration-200 ${
                       organizationFilter === org._id 
-                        ? 'bg-blue-600 text-white' 
-                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200'
+                        ? 'bg-gradient-to-r from-purple-600 to-purple-600 text-white shadow-md scale-105' 
+                        : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:scale-105'
                     }`}
                     title={org.name}
                   >
-                    {org.name.length > 12 ? org.name.substring(0, 12) + '...' : org.name}
+                    {org.name.length > 10 ? org.name.substring(0, 10) + '...' : org.name}
                   </button>
                 ))}
-                {organizations.length > 3 && (
+                {organizations.length > 2 && (
                   <select
                     value={organizationFilter}
                     onChange={(e) => {
                       setOrganizationFilter(e.target.value);
                       resetPaginationAndFetch();
                     }}
-                    className="px-2 py-1 text-xs border border-gray-300 rounded focus:ring-1 focus:ring-primary-500"
+                    className="px-2 py-1.5 text-xs font-semibold border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all duration-200 bg-white"
                   >
                     <option value="all">All Orgs</option>
                     {organizations.map((org) => (
@@ -1302,10 +1416,10 @@ const AdminDashboard = () => {
             
             {/* Export Button - Only for Reddington Admin */}
             {isReddingtonAdmin() && (
-              <div className="flex items-center">
+              <div className="ml-auto">
                 <button
                   onClick={handleExportLeads}
-                  className="px-3 py-1.5 bg-green-600 text-white text-xs rounded-lg hover:bg-green-700 transition-colors flex items-center gap-1.5"
+                  className="px-4 py-1.5 bg-gradient-to-r from-emerald-600 to-emerald-600 text-white text-xs font-semibold rounded-lg hover:shadow-xl hover:scale-105 transition-all duration-200 flex items-center gap-1.5"
                 >
                   <Download size={14} />
                   <span>Export CSV</span>
@@ -1315,70 +1429,72 @@ const AdminDashboard = () => {
           </div>
           
           {/* Filter Summary */}
-          <div className="text-xs text-gray-600 border-t border-gray-100 pt-2">
-            Showing {displayLeads.length} of {pagination.total} leads
-            {searchTerm && (
-              <span className="ml-2 text-purple-600 font-medium">
-                • Search: "{searchTerm}"
-              </span>
-            )}
-            {qualificationFilter !== 'all' && (
-              <span className="ml-2 text-primary-600 font-medium">
-                • {qualificationFilter.charAt(0).toUpperCase() + qualificationFilter.slice(1)}
-              </span>
-            )}
-            {duplicateFilter !== 'all' && (
-              <span className="ml-2 text-yellow-600 font-medium">
-                • {duplicateFilter === 'duplicates' ? 'Duplicates Only' : 'Original Only'}
-              </span>
-            )}
-            {organizationFilter !== 'all' && (
-              <span className="ml-2 text-blue-600 font-medium">
-                • {organizations.find(org => org._id === organizationFilter)?.name || 'Unknown'}
-              </span>
-            )}
-            {dateFilter.filterType !== 'all' && (
-              <span className="ml-2 text-green-600 font-medium">
-                • {dateFilter.filterType === 'today' ? 'Today' :
+          <div className="flex items-center gap-2 pt-2 border-t border-gray-100">
+            <div className="text-xs font-semibold text-gray-700">
+              Showing <span className="text-blue-600">{displayLeads.length}</span> of <span className="text-blue-600">{pagination.total}</span>
+            </div>
+            <div className="flex flex-wrap gap-1.5">
+              {searchTerm && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                  Search: "{searchTerm}"
+                </span>
+              )}
+              {qualificationFilter !== 'all' && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-blue-100 text-blue-800">
+                  {qualificationFilter.charAt(0).toUpperCase() + qualificationFilter.slice(1)}
+                </span>
+              )}
+              {duplicateFilter !== 'all' && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-amber-100 text-amber-800">
+                  {duplicateFilter === 'duplicates' ? 'Dups Only' : 'Original Only'}
+                </span>
+              )}
+              {organizationFilter !== 'all' && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-purple-100 text-purple-800">
+                  {organizations.find(org => org._id === organizationFilter)?.name || 'Unknown'}
+                </span>
+              )}
+              {dateFilter.filterType !== 'all' && (
+                <span className="inline-flex items-center px-2 py-0.5 rounded-full text-xs font-medium bg-emerald-100 text-emerald-800">
+                  {dateFilter.filterType === 'today' ? 'Today' :
                    dateFilter.filterType === 'week' ? '7 Days' :
                    dateFilter.filterType === 'month' ? '30 Days' :
-                   dateFilter.filterType === 'custom' ? `Custom (${dateFilter.startDate} to ${dateFilter.endDate})` :
+                   dateFilter.filterType === 'custom' ? `${dateFilter.startDate} to ${dateFilter.endDate}` :
                    'All Time'}
-              </span>
-            )}
+                </span>
+              )}
+            </div>
           </div>
         </div>
       )}
 
       {/* Leads Section */}
       {showLeadsSection && (
-        <div className="space-y-6 mb-6">
-          <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-            <div className="p-6 border-b border-gray-200">
-              <h3 className="text-lg font-medium text-gray-900">All Leads</h3>
-              <p className="text-sm text-gray-600">Comprehensive view of all leads from Agent1 and Agent2</p>
+        <div className="space-y-3 mb-4">
+          <div className="bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden backdrop-blur-sm bg-opacity-95">
+            <div className="bg-gradient-to-r from-indigo-500 to-purple-600 p-3">
+              <h3 className="text-lg font-bold text-white">All Leads</h3>
+              <p className="text-xs text-indigo-100">Comprehensive view from Agent1 & Agent2</p>
             </div>
             
-            {/* Compact Card-Based Layout */}
-            <div className="p-4 space-y-3 max-h-96 overflow-y-auto">
+            {/* Optimized Card-Based Layout */}
+            <div className="p-3 space-y-2 max-h-[70vh] overflow-y-auto custom-scrollbar">
               {displayLeads.map((lead) => (
-                <div key={lead.leadId || lead._id} className="bg-gray-50 rounded-lg border border-gray-200 hover:shadow-md transition-shadow duration-200">
-                  <div className="p-3">
-                    <div className="grid grid-cols-12 gap-3 items-center">
-                      {/* Lead Basic Info - 3 columns */}
-                      <div className="col-span-3">
+                <div key={lead.leadId || lead._id} className="group bg-gradient-to-r from-gray-50 to-white rounded-lg border border-gray-200 hover:border-blue-300 hover:shadow-lg transition-all duration-200">
+                  <div className="p-2.5">
+                    <div className="grid grid-cols-12 gap-2 items-center text-xs">
+                      {/* Lead Info - 2.5 columns */}
+                      <div className="col-span-2">
                         <div className="flex items-center space-x-2">
-                          <div className="flex-shrink-0">
-                            <div className="h-8 w-8 bg-gradient-to-br from-blue-500 to-blue-600 rounded-full flex items-center justify-center">
-                              <span className="text-white font-semibold text-xs">
-                                {lead.name ? lead.name.charAt(0).toUpperCase() : 'L'}
-                              </span>
-                            </div>
+                          <div className="h-8 w-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow group-hover:scale-110 transition-transform duration-200">
+                            <span className="text-white font-bold text-xs">
+                              {lead.name ? lead.name.charAt(0).toUpperCase() : 'L'}
+                            </span>
                           </div>
                           <div className="min-w-0 flex-1">
-                            <p className="text-sm font-semibold text-gray-900 truncate">{lead.name}</p>
+                            <p className="text-xs font-bold text-gray-900 truncate">{lead.name}</p>
                             {lead.leadId && (
-                              <span className="text-xs text-primary-600 font-mono bg-primary-50 px-1 py-0.5 rounded">
+                              <span className="inline-flex text-xs text-blue-600 font-mono bg-blue-50 px-1 rounded">
                                 {lead.leadId}
                               </span>
                             )}
@@ -1386,88 +1502,78 @@ const AdminDashboard = () => {
                         </div>
                       </div>
 
-                      {/* Contact Info - 2 columns */}
+                      {/* Contact - 2 columns */}
                       <div className="col-span-2">
-                        <div className="text-xs space-y-0.5">
-                          <div className="text-gray-600 truncate">{maskEmail(lead.email)}</div>
-                          <div className="text-gray-500">{maskPhone(lead.phone)}</div>
+                        <div className="space-y-0.5">
+                          <div className="flex items-center gap-1 text-gray-700 truncate">
+                            <svg className="h-3 w-3 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 8l7.89 5.26a2 2 0 002.22 0L21 8M5 19h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v10a2 2 0 002 2z" />
+                            </svg>
+                            <span className="truncate">{maskEmail(lead.email)}</span>
+                          </div>
+                          <div className="flex items-center gap-1 text-gray-600">
+                            <svg className="h-3 w-3 text-gray-400 flex-shrink-0" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M3 5a2 2 0 012-2h3.28a1 1 0 01.948.684l1.498 4.493a1 1 0 01-.502 1.21l-2.257 1.13a11.042 11.042 0 005.516 5.516l1.13-2.257a1 1 0 011.21-.502l4.493 1.498a1 1 0 01.684.949V19a2 2 0 01-2 2h-1C9.716 21 3 14.284 3 6V5z" />
+                            </svg>
+                            <span>{maskPhone(lead.phone)}</span>
+                          </div>
                         </div>
                       </div>
 
-                      {/* Organization - 1 column */}
-                      <div className="col-span-1">
-                        <div className="text-xs">
-                          <span className="text-gray-900 font-medium truncate block" title={lead.organization?.name || 'Unknown'}>
+                      {/* Org & Date - 2 columns */}
+                      <div className="col-span-2">
+                        <div className="space-y-1">
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-purple-50 text-purple-700 font-semibold truncate text-xs" title={lead.organization?.name || 'Unknown'}>
                             {lead.organization?.name ? 
-                              (lead.organization.name.length > 10 ? lead.organization.name.substring(0, 10) + '...' : lead.organization.name) 
+                              (lead.organization.name.length > 8 ? lead.organization.name.substring(0, 8) + '...' : lead.organization.name) 
                               : 'Unknown'}
                           </span>
-                        </div>
-                      </div>
-
-                      {/* Created Date - 1.5 columns */}
-                      <div className="col-span-1">
-                        <div className="text-xs">
-                          <div className="text-gray-900 font-medium">
-                            {formatEasternTimeForDisplay(lead.createdAt, { includeTime: false })}
-                          </div>
-                          <div className="text-gray-500">
-                            {formatEasternTimeForDisplay(lead.createdAt, { includeTime: true, timeOnly: true })}
+                          <div className="flex items-center gap-1 text-gray-500">
+                            <Calendar className="h-3 w-3" />
+                            <span>{formatEasternTimeForDisplay(lead.createdAt, { includeTime: false })}</span>
                           </div>
                         </div>
                       </div>
 
-                      {/* Category - 1 column */}
-                      <div className="col-span-1">
-                        <div className="flex flex-col items-start">
+                      {/* Category & Status - 2.5 columns */}
+                      <div className="col-span-3">
+                        <div className="space-y-1">
                           {getCategoryBadge(lead.category, lead.completionPercentage)}
-                        </div>
-                      </div>
-
-                      {/* Status Indicators - 2 columns */}
-                      <div className="col-span-2">
-                        <div className="flex flex-col space-y-1">
-                          <div className="flex items-center">
-                            {getQualificationBadge(lead.qualificationStatus)}
-                          </div>
-                          <div className="flex items-center">
-                            {lead.isDuplicate ? (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-yellow-100 text-yellow-800">
-                                ⚠️ Dup
-                              </span>
-                            ) : (
-                              <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">
-                                ✓ Orig
-                              </span>
-                            )}
-                          </div>
-                        </div>
-                      </div>
-
-                      {/* Agent Status - 1.5 columns */}
-                      <div className="col-span-2">
-                        <div className="text-xs">
-                          {lead.leadProgressStatus ? (
-                            <span className="inline-flex items-center px-2 py-1 rounded-full text-xs font-medium bg-teal-100 text-teal-800 truncate max-w-full" title={lead.leadProgressStatus}>
-                              {lead.leadProgressStatus.length > 15 ? lead.leadProgressStatus.substring(0, 15) + '...' : lead.leadProgressStatus}
+                          {getQualificationBadge(lead.qualificationStatus)}
+                          {lead.isDuplicate ? (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-amber-100 text-amber-800">
+                              ⚠️ Dup
                             </span>
                           ) : (
-                            <span className="text-gray-400 italic">No status</span>
-                          )}
-                          {isReddingtonAdmin() && lead.lastUpdatedBy && (
-                            <div className="text-xs text-gray-500 mt-0.5">
-                              by {lead.lastUpdatedBy}
-                            </div>
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-emerald-100 text-emerald-800">
+                              ✓ Orig
+                            </span>
                           )}
                         </div>
                       </div>
 
-                      {/* Actions - 1 column */}
+                      {/* Agent Status - 2 columns */}
+                      <div className="col-span-2">
+                        {lead.leadProgressStatus ? (
+                          <span className="inline-flex items-center px-2 py-1 rounded-lg text-xs font-semibold bg-gradient-to-r from-teal-100 to-teal-200 text-teal-800 truncate" title={lead.leadProgressStatus}>
+                            {lead.leadProgressStatus.length > 12 ? lead.leadProgressStatus.substring(0, 12) + '...' : lead.leadProgressStatus}
+                          </span>
+                        ) : (
+                          <span className="text-gray-400 italic text-xs">No status</span>
+                        )}
+                        {isReddingtonAdmin() && lead.lastUpdatedBy && (
+                          <div className="text-xs text-gray-500 truncate">
+                            by {lead.lastUpdatedBy}
+                          </div>
+                        )}
+                      </div>
+
+                      {/* Actions - 1.5 columns */}
                       <div className="col-span-1">
                         <div className="flex flex-col space-y-1">
                           <button
                             onClick={() => openViewModal(lead)}
-                            className="w-full text-primary-600 hover:text-primary-900 bg-primary-50 hover:bg-primary-100 px-2 py-1 rounded text-xs transition-colors duration-200 flex items-center justify-center gap-1"
+                            className="w-full text-blue-600 hover:text-white bg-blue-50 hover:bg-gradient-to-r hover:from-blue-600 hover:to-indigo-600 px-2 py-1 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center justify-center gap-1"
                           >
                             {isReddingtonAdmin() ? (
                               <>
@@ -1479,40 +1585,14 @@ const AdminDashboard = () => {
                             )}
                           </button>
                           
-                          {/* Reassign button - Only for REDDINGTON GLOBAL CONSULTANCY admins */}
                           {isReddingtonAdmin() && (
                             <button
                               onClick={() => openReassignModal(lead)}
-                              className="w-full text-blue-600 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 px-2 py-1 rounded text-xs transition-colors duration-200 flex items-center justify-center gap-1"
-                              title="Reassign lead to Agent 2"
+                              className="w-full text-purple-600 hover:text-white bg-purple-50 hover:bg-gradient-to-r hover:from-purple-600 hover:to-purple-600 px-2 py-1 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center justify-center gap-1"
+                              title="Reassign"
                             >
                               <UserCheck className="h-3 w-3" />
-                              Reassign
                             </button>
-                          )}
-                        </div>
-                      </div>
-                    </div>
-
-                    {/* Additional Info Row - Collapsible */}
-                    <div className="mt-2 pt-2 border-t border-gray-200">
-                      <div className="grid grid-cols-12 gap-3 text-xs text-gray-500">
-                        <div className="col-span-3">
-                          <span>Created: {lead.createdBy?.name || 'Unknown'}</span>
-                        </div>
-                        <div className="col-span-3">
-                          <span className="text-blue-600">Created: {formatEasternTimeForDisplay(lead.createdAt, { includeTime: false })}</span>
-                        </div>
-                        {isReddingtonAdmin() && lead.lastUpdatedBy && (
-                          <div className="col-span-3">
-                            <span className="text-green-600">Updated: {lead.lastUpdatedBy}</span>
-                          </div>
-                        )}
-                        <div className="col-span-3 text-right">
-                          {lead.lastUpdatedAt && (
-                            <span>
-                              {formatEasternTimeForDisplay(lead.lastUpdatedAt, { includeTime: false })}
-                            </span>
                           )}
                         </div>
                       </div>
@@ -1522,14 +1602,14 @@ const AdminDashboard = () => {
               ))}
               
               {displayLeads.length === 0 && (
-                <div className="bg-gray-50 rounded-lg border border-gray-200 p-8 text-center">
+                <div className="bg-gradient-to-br from-gray-50 to-gray-100 rounded-xl border-2 border-dashed border-gray-300 p-12 text-center">
                   <div className="text-gray-500">
-                    <div className="mx-auto h-12 w-12 text-gray-400 mb-4">
+                    <div className="mx-auto h-16 w-16 text-gray-300 mb-4">
                       <svg fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M9 12h6m-6 4h6m2 5H7a2 2 0 01-2-2V5a2 2 0 012-2h5.586a1 1 0 01.707.293l5.414 5.414a1 1 0 01.293.707V19a2 2 0 01-2 2z" />
                       </svg>
                     </div>
-                    <p className="text-lg font-medium text-gray-900 mb-2">No leads found</p>
+                    <p className="text-xl font-bold text-gray-900 mb-2">No leads found</p>
                     <p className="text-gray-500">No leads match your current filter criteria.</p>
                   </div>
                 </div>
