@@ -26,6 +26,12 @@ coverage/
 .env.test.local
 .env.production.local
 
+# Keep example env files
+!.env.example
+!client/.env.example
+!client/.env.production
+!server/.env.example
+
 # Logs
 logs
 *.log
@@ -106,6 +112,25 @@ coverage/
 
 # Database
 *.db
+
+# PM2 logs
+.pm2/
+pm2.log
+
+# Nginx logs (if stored locally)
+*.access.log
+*.error.log
+
+# SSL certificates (never commit)
+*.pem
+*.key
+*.crt
+*.csr
+
+# Backup files
+*.backup
+*.bak
+database-export/
 *.sqlite
 
 # Misc

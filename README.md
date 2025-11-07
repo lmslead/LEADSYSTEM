@@ -1,32 +1,38 @@
 # Lead Management System (LMS)
 
-A full-stack web application for managing leads with role-based access control and real-time updates.
+A comprehensive lead management system with real-time updates, role-based access control, and advanced analytics.
+
+🌐 **Live at:** https://olivialms.cloud
 
 ## Features
 
-- **Role-based Authentication**: Agent 1 (Lead Generator), Agent 2 (Lead Follower), Admin
-- **Real-time Updates**: Using Socket.IO for live data synchronization  
-- **AI Lead Categorization**: Automatic classification as Hot, Warm, or Cold based on data completeness
-- **Dashboard Analytics**: Real-time metrics and conversion tracking
-- **Mobile Responsive**: Clean UI with Tailwind CSS
-- **Security**: JWT authentication, bcrypt hashing, input validation, rate limiting
+- 🔐 **Role-Based Access Control** - Super Admin, Admin, Agent1, Agent2
+- 📊 **Real-time Dashboard** - Live updates with Socket.IO
+- 📈 **Analytics & Reports** - Comprehensive lead tracking and metrics
+- 🔄 **Lead Assignment** - Automatic and manual lead distribution
+- 📱 **Responsive Design** - Works on all devices
+- 🔒 **Secure** - JWT authentication, rate limiting, data sanitization
+- 📁 **CSV Import/Export** - Bulk lead management
+- 🌍 **Multi-Organization** - Support for multiple organizations
 
 ## Tech Stack
 
+### Frontend
+- React 18
+- React Router v6
+- Tailwind CSS
+- Socket.IO Client
+- Axios
+- React Hot Toast
+- Recharts (Analytics)
+
 ### Backend
 - Node.js with Express.js
-- MongoDB Atlas
+- MongoDB with Mongoose
 - Socket.IO for real-time communication
 - JWT for authentication
-- bcrypt for password hashing
-- Helmet, CORS, express-rate-limit for security
-
-### Frontend
-- React.js with hooks
-- Tailwind CSS for styling
-- Axios for API calls
-- Socket.IO client for real-time updates
-- React Router for navigation
+- bcryptjs for password hashing
+- Express Rate Limiting, Helmet, CORS for security
 
 ## Setup Instructions
 

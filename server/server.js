@@ -24,15 +24,34 @@ app.set('trust proxy', 1);
 
 const server = http.createServer(app);
 const dev = process.env.NODE_ENV !== 'production';
+
+// Get CORS origin from environment or use defaults
+const getCorsOrigins = () => {
+  if (dev) {
+    return ['http://localhost:3000', 'http://127.0.0.1:3000'];
+  }
+  
+  // Production CORS origins
+  const envOrigin = process.env.CORS_ORIGIN;
+  const origins = [
+    'https://olivialms.cloud',
+    'https://www.olivialms.cloud',
+    'http://olivialms.cloud',
+    'http://www.olivialms.cloud'
+  ];
+  
+  if (envOrigin) {
+    origins.push(envOrigin);
+  }
+  
+  return origins;
+};
+
+const corsOrigins = getCorsOrigins();
+
 const io = socketIo(server, {
   cors: {
-    origin: dev ? true : [
-      `http://100.24.13.0`,
-      `http://100.24.13.0:3000`,
-      `http://100.24.13.0:5000`,
-      `http://100.24.13.0:80`,
-      `http://100.24.13.0:443`
-    ],
+    origin: corsOrigins,
     credentials: true,
     methods: ["GET", "POST", "PUT", "DELETE"]
   },
@@ -60,13 +79,7 @@ app.use(helmet({
   },
 }));
 app.use(cors({
-  origin: dev ? ['http://localhost:3000', 'http://127.0.0.1:3000'] : [
-    `http://100.24.13.0`,
-    `http://100.24.13.0:3000`,
-    `http://100.24.13.0:5000`,
-    `http://100.24.13.0:80`,
-    `http://100.24.13.0:443`
-  ],
+  origin: corsOrigins,
   credentials: true,
   methods: ['GET', 'POST', 'PUT', 'DELETE', 'OPTIONS'],
   allowedHeaders: ['Content-Type', 'Authorization']
