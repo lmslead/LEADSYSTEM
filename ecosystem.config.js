@@ -2,8 +2,8 @@ module.exports = {
   apps: [{
     name: 'lms-backend',
     script: './server/server.js',
-    instances: 'max',
-    exec_mode: 'cluster',
+    instances: 1, // Use 1 instance to avoid rate limiting issues
+    exec_mode: 'fork',
     env: {
       NODE_ENV: 'production',
       PORT: 5000
@@ -17,7 +17,11 @@ module.exports = {
     watch: false,
     merge_logs: true,
     min_uptime: '10s',
-    max_restarts: 10,
-    restart_delay: 4000
+    max_restarts: 50, // Increased from 10
+    restart_delay: 2000, // Reduced from 4000
+    kill_timeout: 5000,
+    wait_ready: true,
+    listen_timeout: 10000,
+    shutdown_with_message: true
   }]
 };

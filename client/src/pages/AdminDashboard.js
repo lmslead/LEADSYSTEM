@@ -247,33 +247,50 @@ const AdminDashboard = () => {
 
   // Request deduplication - prevent multiple identical API calls
   const pendingRequestsRef = useRef(new Map());
+  
+  // Use refs to hold current filter values to avoid recreating fetchLeads
+  const paginationRef = useRef(pagination);
+  const filtersRef = useRef({ qualificationFilter, duplicateFilter, organizationFilter, dateFilter });
+  
+  // Update refs when values change
+  useEffect(() => {
+    paginationRef.current = pagination;
+  }, [pagination]);
+  
+  useEffect(() => {
+    filtersRef.current = { qualificationFilter, duplicateFilter, organizationFilter, dateFilter };
+  }, [qualificationFilter, duplicateFilter, organizationFilter, dateFilter]);
 
-  const fetchLeads = useCallback(async (silent = false, page = pagination.page) => {
+  const fetchLeads = useCallback(async (silent = false, page = null) => {
     try {
       console.log('Admin Dashboard: Fetching leads...');
+      const currentPage = page ?? paginationRef.current.page;
+      const currentLimit = paginationRef.current.limit;
+      const filters = filtersRef.current;
+      
       const timestamp = new Date().getTime();
-      let url = `/api/leads?page=${page}&limit=${pagination.limit}&_t=${timestamp}`;
+      let url = `/api/leads?page=${currentPage}&limit=${currentLimit}&_t=${timestamp}`;
       
       // Add qualification filter if selected
-      if (qualificationFilter && qualificationFilter !== 'all') {
-        url += `&qualificationStatus=${qualificationFilter}`;
+      if (filters.qualificationFilter && filters.qualificationFilter !== 'all') {
+        url += `&qualificationStatus=${filters.qualificationFilter}`;
       }
       
       // Add duplicate filter if selected
-      if (duplicateFilter && duplicateFilter !== 'all') {
-        url += `&duplicateStatus=${duplicateFilter}`;
+      if (filters.duplicateFilter && filters.duplicateFilter !== 'all') {
+        url += `&duplicateStatus=${filters.duplicateFilter}`;
       }
       
       // Add organization filter if selected
-      if (organizationFilter && organizationFilter !== 'all') {
-        url += `&organization=${organizationFilter}`;
+      if (filters.organizationFilter && filters.organizationFilter !== 'all') {
+        url += `&organization=${filters.organizationFilter}`;
       }
       
       // Add date filtering parameters
-      if (dateFilter.filterType && dateFilter.filterType !== 'all') {
-        url += `&dateFilterType=${dateFilter.filterType}`;
-        if (dateFilter.filterType === 'custom' && dateFilter.startDate && dateFilter.endDate) {
-          url += `&startDate=${dateFilter.startDate}&endDate=${dateFilter.endDate}`;
+      if (filters.dateFilter.filterType && filters.dateFilter.filterType !== 'all') {
+        url += `&dateFilterType=${filters.dateFilter.filterType}`;
+        if (filters.dateFilter.filterType === 'custom' && filters.dateFilter.startDate && filters.dateFilter.endDate) {
+          url += `&startDate=${filters.dateFilter.startDate}&endDate=${filters.dateFilter.endDate}`;
         }
       }
       
@@ -328,7 +345,7 @@ const AdminDashboard = () => {
       console.error('Unexpected error in fetchLeads:', error);
       return { success: false, error };
     }
-  }, [pagination.page, pagination.limit, qualificationFilter, duplicateFilter, organizationFilter, dateFilter]);
+  }, []); // No dependencies - uses refs for current values
 
   // Initial data fetching
   useEffect(() => {
@@ -351,7 +368,7 @@ const AdminDashboard = () => {
 
     initializeData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showLeadsSection, qualificationFilter, duplicateFilter, organizationFilter, dateFilter, fetchLeads, fetchAllLeadsForStats]);
+  }, [showLeadsSection, qualificationFilter, duplicateFilter, organizationFilter, dateFilter]);
 
   // Handle refresh functionality
   const handleDashboardRefresh = useCallback(() => {
@@ -531,21 +548,13 @@ const AdminDashboard = () => {
   };
 
   // Check if user is from REDDINGTON GLOBAL CONSULTANCY
-  const isReddingtonAdmin = useCallback(() => {
-    console.log('User object:', user);
-    console.log('User organization:', user?.organization);
-    console.log('Organization name:', user?.organization?.name);
-    console.log('Organization ID:', user?.organization);
-    
+  // Use useMemo instead of useCallback to calculate once per render
+  const isReddingtonAdmin = useMemo(() => {
     // Check by organization name first, then by ID as fallback
     const isReddingtonByName = user?.organization?.name === 'REDDINGTON GLOBAL CONSULTANCY';
     const isReddingtonById = user?.organization === '68b9c76d2c29dac1220cb81c' || user?.organization?._id === '68b9c76d2c29dac1220cb81c';
     
-    const isReddington = isReddingtonByName || isReddingtonById;
-    console.log('Is Reddington admin (by name):', isReddingtonByName);
-    console.log('Is Reddington admin (by ID):', isReddingtonById);
-    console.log('Final result:', isReddington);
-    return isReddington;
+    return isReddingtonByName || isReddingtonById;
   }, [user]);
 
   // Socket.IO event listeners for real-time updates with debouncing
@@ -579,7 +588,7 @@ const AdminDashboard = () => {
       const handleLeadUpdated = (data) => {
         console.log('Lead updated via socket:', data);
         // Only show notifications to main organization (REDDINGTON) admins
-        if (isReddingtonAdmin()) {
+        if (isReddingtonAdmin) {
           toast.success(`Lead updated by ${data.updatedBy}`, {
             duration: 2000,
             icon: '🔄'
@@ -591,7 +600,7 @@ const AdminDashboard = () => {
       const handleLeadCreated = (data) => {
         console.log('New lead created via socket:', data);
         // Only show notifications to main organization (REDDINGTON) admins
-        if (isReddingtonAdmin()) {
+        if (isReddingtonAdmin) {
           toast.success(`New lead created by ${data.createdBy}`, {
             duration: 2000,
             icon: '✅'
@@ -603,7 +612,7 @@ const AdminDashboard = () => {
       const handleLeadDeleted = (data) => {
         console.log('Lead deleted via socket:', data);
         // Only show notifications to main organization (REDDINGTON) admins
-        if (isReddingtonAdmin()) {
+        if (isReddingtonAdmin) {
           toast.success(`Lead deleted by ${data.deletedBy}`, {
             duration: 2000,
             icon: '🗑️'
@@ -626,7 +635,8 @@ const AdminDashboard = () => {
         socket.off('leadDeleted', handleLeadDeleted);
       };
     }
-  }, [socket, showLeadsSection, fetchLeads, fetchAllLeadsForStats, stats, isReddingtonAdmin, fetchStats]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [socket, showLeadsSection, stats]);
 
   // Search functionality with debouncing to prevent excessive filtering
   const searchTimeoutRef = useRef(null);
@@ -700,7 +710,7 @@ const AdminDashboard = () => {
 
   // Enhanced lead update with proper data types
   const handleLeadUpdate = async () => {
-    if (!editedLead || !isReddingtonAdmin()) return;
+    if (!editedLead || !isReddingtonAdmin) return;
 
     setIsUpdating(true);
     try {
@@ -1415,7 +1425,7 @@ const AdminDashboard = () => {
             </div>
             
             {/* Export Button - Only for Reddington Admin */}
-            {isReddingtonAdmin() && (
+            {isReddingtonAdmin && (
               <div className="ml-auto">
                 <button
                   onClick={handleExportLeads}
@@ -1561,7 +1571,7 @@ const AdminDashboard = () => {
                         ) : (
                           <span className="text-gray-400 italic text-xs">No status</span>
                         )}
-                        {isReddingtonAdmin() && lead.lastUpdatedBy && (
+                        {isReddingtonAdmin && lead.lastUpdatedBy && (
                           <div className="text-xs text-gray-500 truncate">
                             by {lead.lastUpdatedBy}
                           </div>
@@ -1575,7 +1585,7 @@ const AdminDashboard = () => {
                             onClick={() => openViewModal(lead)}
                             className="w-full text-blue-600 hover:text-white bg-blue-50 hover:bg-gradient-to-r hover:from-blue-600 hover:to-indigo-600 px-2 py-1 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center justify-center gap-1"
                           >
-                            {isReddingtonAdmin() ? (
+                            {isReddingtonAdmin ? (
                               <>
                                 <Edit3 className="h-3 w-3" />
                                 Edit
@@ -1585,7 +1595,7 @@ const AdminDashboard = () => {
                             )}
                           </button>
                           
-                          {isReddingtonAdmin() && (
+                          {isReddingtonAdmin && (
                             <button
                               onClick={() => openReassignModal(lead)}
                               className="w-full text-purple-600 hover:text-white bg-purple-50 hover:bg-gradient-to-r hover:from-purple-600 hover:to-purple-600 px-2 py-1 rounded-lg text-xs font-semibold transition-all duration-200 flex items-center justify-center gap-1"
@@ -1649,14 +1659,14 @@ const AdminDashboard = () => {
                 <div className="flex justify-between items-center">
                   <div>
                     <h3 className="text-xl font-semibold text-white">
-                      {isReddingtonAdmin() && isEditing ? 'Edit Lead' : 'Lead Details'}: {selectedLead.name}
+                      {isReddingtonAdmin && isEditing ? 'Edit Lead' : 'Lead Details'}: {selectedLead.name}
                     </h3>
                     <p className="text-blue-100 text-sm">
-                      {isReddingtonAdmin() && isEditing ? 'Modify lead information and status' : 'Complete lead information and tracking'}
+                      {isReddingtonAdmin && isEditing ? 'Modify lead information and status' : 'Complete lead information and tracking'}
                     </p>
                   </div>
                   <div className="flex items-center gap-2">
-                    {isReddingtonAdmin() && (
+                    {isReddingtonAdmin && (
                       <>
                         {isEditing ? (
                           <>
@@ -1714,7 +1724,7 @@ const AdminDashboard = () => {
                     <div className="space-y-3">
                       <div className="flex justify-between items-start">
                         <span className="text-sm font-medium text-gray-600">Name:</span>
-                        {isReddingtonAdmin() && isEditing ? (
+                        {isReddingtonAdmin && isEditing ? (
                           <input
                             type="text"
                             value={editedLead.name || ''}
@@ -1727,7 +1737,7 @@ const AdminDashboard = () => {
                       </div>
                       <div className="flex justify-between items-start">
                         <span className="text-sm font-medium text-gray-600">Email:</span>
-                        {isReddingtonAdmin() && isEditing ? (
+                        {isReddingtonAdmin && isEditing ? (
                           <input
                             type="email"
                             value={editedLead.email || ''}
@@ -1740,7 +1750,7 @@ const AdminDashboard = () => {
                       </div>
                       <div className="flex justify-between items-start">
                         <span className="text-sm font-medium text-gray-600">Phone:</span>
-                        {isReddingtonAdmin() && isEditing ? (
+                        {isReddingtonAdmin && isEditing ? (
                           <input
                             type="tel"
                             value={editedLead.phone || ''}
@@ -1753,7 +1763,7 @@ const AdminDashboard = () => {
                       </div>
                       <div className="flex justify-between items-start">
                         <span className="text-sm font-medium text-gray-600">Alt. Phone:</span>
-                        {isReddingtonAdmin() && isEditing ? (
+                        {isReddingtonAdmin && isEditing ? (
                           <input
                             type="tel"
                             value={editedLead.alternatePhone || ''}
@@ -1781,7 +1791,7 @@ const AdminDashboard = () => {
                     <div className="space-y-3">
                       <div className="flex justify-between items-start">
                         <span className="text-sm font-medium text-gray-600">Address:</span>
-                        {isReddingtonAdmin() && isEditing ? (
+                        {isReddingtonAdmin && isEditing ? (
                           <textarea
                             value={editedLead.address || ''}
                             onChange={(e) => handleInputChange('address', e.target.value)}
@@ -1794,7 +1804,7 @@ const AdminDashboard = () => {
                       </div>
                       <div className="flex justify-between items-start">
                         <span className="text-sm font-medium text-gray-600">City:</span>
-                        {isReddingtonAdmin() && isEditing ? (
+                        {isReddingtonAdmin && isEditing ? (
                           <input
                             type="text"
                             value={editedLead.city || ''}
@@ -1808,7 +1818,7 @@ const AdminDashboard = () => {
                       </div>
                       <div className="flex justify-between items-start">
                         <span className="text-sm font-medium text-gray-600">State:</span>
-                        {isReddingtonAdmin() && isEditing ? (
+                        {isReddingtonAdmin && isEditing ? (
                           <input
                             type="text"
                             value={editedLead.state || ''}
@@ -1822,7 +1832,7 @@ const AdminDashboard = () => {
                       </div>
                       <div className="flex justify-between items-start">
                         <span className="text-sm font-medium text-gray-600">Zipcode:</span>
-                        {isReddingtonAdmin() && isEditing ? (
+                        {isReddingtonAdmin && isEditing ? (
                           <input
                             type="text"
                             value={editedLead.zipcode || ''}
@@ -1850,7 +1860,7 @@ const AdminDashboard = () => {
                     <div className="space-y-3">
                       <div className="flex justify-between items-start">
                         <span className="text-sm font-medium text-gray-600">Category:</span>
-                        {isReddingtonAdmin() && isEditing ? (
+                        {isReddingtonAdmin && isEditing ? (
                           <select
                             value={editedLead.debtCategory || editedLead.category || ''}
                             onChange={(e) => handleInputChange('debtCategory', e.target.value)}
@@ -1867,7 +1877,7 @@ const AdminDashboard = () => {
                       </div>
                       <div className="flex justify-between items-start">
                         <span className="text-sm font-medium text-gray-600">Source:</span>
-                        {isReddingtonAdmin() && isEditing ? (
+                        {isReddingtonAdmin && isEditing ? (
                           <input
                             type="text"
                             value={editedLead.source || ''}
@@ -1881,7 +1891,7 @@ const AdminDashboard = () => {
                       </div>
                       <div className="flex justify-between items-start">
                         <span className="text-sm font-medium text-gray-600">Total Amount:</span>
-                        {isReddingtonAdmin() && isEditing ? (
+                        {isReddingtonAdmin && isEditing ? (
                           <input
                             type="number"
                             value={editedLead.totalDebtAmount || ''}
@@ -1897,7 +1907,7 @@ const AdminDashboard = () => {
                       </div>
                       <div className="flex justify-between items-start">
                         <span className="text-sm font-medium text-gray-600">Creditors:</span>
-                        {isReddingtonAdmin() && isEditing ? (
+                        {isReddingtonAdmin && isEditing ? (
                           <input
                             type="number"
                             value={editedLead.numberOfCreditors || ''}
@@ -1911,7 +1921,7 @@ const AdminDashboard = () => {
                       </div>
                       <div className="flex justify-between items-start">
                         <span className="text-sm font-medium text-gray-600">Monthly Payment:</span>
-                        {isReddingtonAdmin() && isEditing ? (
+                        {isReddingtonAdmin && isEditing ? (
                           <input
                             type="number"
                             value={editedLead.monthlyDebtPayment || ''}
@@ -1927,7 +1937,7 @@ const AdminDashboard = () => {
                       </div>
                       <div className="flex justify-between items-start">
                         <span className="text-sm font-medium text-gray-600">Credit Score:</span>
-                        {isReddingtonAdmin() && isEditing ? (
+                        {isReddingtonAdmin && isEditing ? (
                           <select
                             value={editedLead.creditScoreRange || ''}
                             onChange={(e) => handleInputChange('creditScoreRange', e.target.value)}
@@ -1973,7 +1983,7 @@ const AdminDashboard = () => {
                       </div>
                       <div className="flex justify-between items-start">
                         <span className="text-sm font-medium text-gray-600">Category:</span>
-                        {isReddingtonAdmin() && isEditing ? (
+                        {isReddingtonAdmin && isEditing ? (
                           <select
                             value={editedLead.category || ''}
                             onChange={(e) => handleInputChange('category', e.target.value)}
@@ -1990,7 +2000,7 @@ const AdminDashboard = () => {
                       </div>
                       <div className="flex justify-between items-start">
                         <span className="text-sm font-medium text-gray-600">Qualification:</span>
-                        {isReddingtonAdmin() && isEditing ? (
+                        {isReddingtonAdmin && isEditing ? (
                           <div className="text-right">
                             <select
                               value={editedLead.qualificationStatus || ''}
@@ -2010,7 +2020,7 @@ const AdminDashboard = () => {
                       </div>
                       <div className="flex justify-between items-start">
                         <span className="text-sm font-medium text-gray-600">Status:</span>
-                        {isReddingtonAdmin() && isEditing ? (
+                        {isReddingtonAdmin && isEditing ? (
                           <select
                             value={editedLead.status || ''}
                             onChange={(e) => handleInputChange('status', e.target.value)}
@@ -2029,7 +2039,7 @@ const AdminDashboard = () => {
                       </div>
                       <div className="flex justify-between items-start">
                         {/* <span className="text-sm font-medium text-gray-600">Company:</span> */}
-                        {isReddingtonAdmin() && isEditing ? (
+                        {isReddingtonAdmin && isEditing ? (
                           <input
                             type="text"
                             value={editedLead.company || ''}
@@ -2043,7 +2053,7 @@ const AdminDashboard = () => {
                       </div>
                       <div className="flex justify-between items-start">
                         {/* <span className="text-sm font-medium text-gray-600">Completion %:</span> */}
-                        {isReddingtonAdmin() && isEditing ? (
+                        {isReddingtonAdmin && isEditing ? (
                           <input
                             // type="number"
                             // min="0"
@@ -2057,7 +2067,7 @@ const AdminDashboard = () => {
                           <span className="text-sm text-gray-900 text-right"></span>
                         )}
                       </div>
-                      {isReddingtonAdmin() && selectedLead.lastUpdatedBy && (
+                      {isReddingtonAdmin && selectedLead.lastUpdatedBy && (
                         <div className="flex justify-between items-start">
                           <span className="text-sm font-medium text-gray-600">Updated By:</span>
                           <span className="text-sm text-green-700 text-right font-medium">{selectedLead.lastUpdatedBy}</span>
@@ -2075,7 +2085,7 @@ const AdminDashboard = () => {
                         </svg>
                       </div>
                       <h4 className="text-lg font-semibold text-gray-800">Agent2 Actions & Status</h4>
-                      {isReddingtonAdmin() && isEditing && (
+                      {isReddingtonAdmin && isEditing && (
                         <p className="text-xs text-blue-600 italic">Note: Lead Progress Status and Qualification Status are independent fields</p>
                       )}
                     </div>
@@ -2083,7 +2093,7 @@ const AdminDashboard = () => {
                       <div className="bg-white p-3 rounded-lg border border-teal-200">
                         <div className="flex justify-between items-start">
                           <span className="text-sm font-medium text-gray-600">Lead Progress Status:</span>
-                          {isReddingtonAdmin() && isEditing ? (
+                          {isReddingtonAdmin && isEditing ? (
                             <select
                               value={editedLead.leadProgressStatus || ''}
                               onChange={(e) => handleInputChange('leadProgressStatus', e.target.value)}
@@ -2110,7 +2120,7 @@ const AdminDashboard = () => {
                       
                       <div className="flex justify-between items-start">
                         <span className="text-sm font-medium text-gray-600">Follow-up Date:</span>
-                        {isReddingtonAdmin() && isEditing ? (
+                        {isReddingtonAdmin && isEditing ? (
                           <input
                             type="date"
                             value={editedLead.followUpDate ? new Date(editedLead.followUpDate).toISOString().split('T')[0] : ''}
@@ -2126,7 +2136,7 @@ const AdminDashboard = () => {
 
                       <div className="flex justify-between items-start">
                         <span className="text-sm font-medium text-gray-600">Follow-up Time:</span>
-                        {isReddingtonAdmin() && isEditing ? (
+                        {isReddingtonAdmin && isEditing ? (
                           <input
                             type="time"
                             value={editedLead.followUpTime || ''}
@@ -2142,7 +2152,7 @@ const AdminDashboard = () => {
 
                       <div className="flex justify-between items-start">
                         <span className="text-sm font-medium text-gray-600">Conversion Value:</span>
-                        {isReddingtonAdmin() && isEditing ? (
+                        {isReddingtonAdmin && isEditing ? (
                           <input
                             type="number"
                             value={editedLead.conversionValue || ''}
@@ -2157,7 +2167,7 @@ const AdminDashboard = () => {
                         )}
                       </div>
                       
-                      {isReddingtonAdmin() && selectedLead.lastUpdatedBy && (
+                      {isReddingtonAdmin && selectedLead.lastUpdatedBy && (
                         <div className="flex justify-between items-start">
                           <span className="text-sm font-medium text-gray-600">Last Updated By:</span>
                           <span className="text-sm text-teal-700 text-right font-medium">{selectedLead.lastUpdatedBy}</span>
@@ -2192,7 +2202,7 @@ const AdminDashboard = () => {
                         <div className="flex items-center mb-2">
                           <span className="text-sm font-semibold text-blue-800">Agent1 Notes:</span>
                         </div>
-                        {isReddingtonAdmin() && isEditing ? (
+                        {isReddingtonAdmin && isEditing ? (
                           <textarea
                             value={editedLead.notes || ''}
                             onChange={(e) => handleInputChange('notes', e.target.value)}
@@ -2209,7 +2219,7 @@ const AdminDashboard = () => {
                         <div className="flex items-center mb-2">
                           <span className="text-sm font-semibold text-purple-800">Assignment Notes:</span>
                         </div>
-                        {isReddingtonAdmin() && isEditing ? (
+                        {isReddingtonAdmin && isEditing ? (
                           <textarea
                             value={editedLead.assignmentNotes || ''}
                             onChange={(e) => handleInputChange('assignmentNotes', e.target.value)}
@@ -2226,7 +2236,7 @@ const AdminDashboard = () => {
                         <div className="flex items-center mb-2">
                           <span className="text-sm font-semibold text-green-800">Agent2 Follow-up Notes:</span>
                         </div>
-                        {isReddingtonAdmin() && isEditing ? (
+                        {isReddingtonAdmin && isEditing ? (
                           <textarea
                             value={editedLead.followUpNotes || ''}
                             onChange={(e) => handleInputChange('followUpNotes', e.target.value)}
@@ -2271,3 +2281,4 @@ const AdminDashboard = () => {
 };
 
 export default AdminDashboard;
+

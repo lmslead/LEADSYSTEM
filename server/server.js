@@ -19,8 +19,9 @@ const organizationRoutes = require('./routes/organizations');
 
 const app = express();
 
-// Trust proxy for rate limiting
+// Trust proxy - IMPORTANT: Set to 1 for single proxy (Nginx)
 app.set('trust proxy', 1);
+app.enable('trust proxy');
 
 const server = http.createServer(app);
 const dev = process.env.NODE_ENV !== 'production';
@@ -85,19 +86,25 @@ app.use(cors({
   allowedHeaders: ['Content-Type', 'Authorization']
 }));
 
-// Rate limiting
+// Rate limiting - more generous for production
 const limiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 1000, // limit each IP to 1000 requests per windowMs (increased for development)
-  message: 'Too many requests from this IP, please try again later.'
+  max: process.env.NODE_ENV === 'production' ? 5000 : 1000, // Higher limit for production
+  message: 'Too many requests from this IP, please try again later.',
+  standardHeaders: true, // Return rate limit info in the `RateLimit-*` headers
+  legacyHeaders: false, // Disable the `X-RateLimit-*` headers
+  skipSuccessfulRequests: false,
+  skipFailedRequests: false,
 });
 app.use('/api/', limiter);
 
-// Auth rate limiting (more restrictive but reasonable for development)
+// Auth rate limiting
 const authLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutes
-  max: 50, // limit each IP to 50 requests per windowMs for auth (increased)
-  message: 'Too many authentication attempts, please try again later.'
+  max: process.env.NODE_ENV === 'production' ? 200 : 50, // Higher limit for production
+  message: 'Too many authentication attempts, please try again later.',
+  standardHeaders: true,
+  legacyHeaders: false,
 });
 app.use('/api/auth', authLimiter);
 

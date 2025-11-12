@@ -332,9 +332,12 @@ const Agent2Dashboard = () => {
     
     // Refetch leads
     fetchLeads(1);
-    fetchPersistentLeads(); // Also refresh persistent leads
+    // Only fetch persistent leads for Agent2 users
+    if (user.role === 'agent2') {
+      fetchPersistentLeads();
+    }
     toast.success('Dashboard refreshed!');
-  }, [fetchLeads, fetchPersistentLeads]);
+  }, [fetchLeads, fetchPersistentLeads, user.role]);
 
   // Register refresh callback
   useEffect(() => {
@@ -344,10 +347,12 @@ const Agent2Dashboard = () => {
     };
   }, [registerRefreshCallback, unregisterRefreshCallback, handleDashboardRefresh]);
 
-  // Fetch persistent leads on component mount
+  // Fetch persistent leads on component mount - Only for Agent2
   useEffect(() => {
-    fetchPersistentLeads();
-  }, [fetchPersistentLeads]); // Add fetchPersistentLeads to dependency array
+    if (user.role === 'agent2') {
+      fetchPersistentLeads();
+    }
+  }, [fetchPersistentLeads, user.role]); // Add fetchPersistentLeads to dependency array
 
   // Reset pagination when filters change
   const resetPaginationAndFetch = useCallback(() => {
@@ -1255,149 +1260,158 @@ const Agent2Dashboard = () => {
           <h1 className="text-2xl font-bold text-gray-900">Lead Management</h1>
           <p className="text-gray-600">Follow up on leads and update their status</p>
         </div>
-        <button
-          onClick={() => setShowCreateForm(true)}
-          className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
-        >
-          <Plus className="h-4 w-4" />
-          Create Lead
-        </button>
-      </div>
-
-      {/* Agent2 Dashboard Summary */}
-      <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-        {/* Today's Assigned Leads */}
-        <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-          <div className="text-center">
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Today's Assigned</h3>
-            <div className="text-2xl font-bold text-green-600">
-              {stats.todaysLeads?.length || 0}
-            </div>
-            <p className="text-sm text-gray-600">leads assigned today</p>
-          </div>
-        </div>
-
-        {/* Pending Qualification */}
-        <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-          <div className="text-center">
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Pending Qualification</h3>
-            <div className="text-2xl font-bold text-yellow-600">
-              {stats.pendingQualificationCount || 0}
-            </div>
-            <p className="text-sm text-gray-600">leads need qualification</p>
-          </div>
-        </div>
-
-        {/* Callback Needed */}
-        <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
-          <div className="text-center">
-            <h3 className="text-lg font-medium text-gray-900 mb-2">Callback Needed</h3>
-            <div className="text-2xl font-bold text-orange-600">
-              {stats.callbackNeededCount || 0}
-            </div>
-            <p className="text-sm text-gray-600">leads need callback</p>
-          </div>
-        </div>
-      </div>
-
-      {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center">
-            <div className="p-3 rounded-full bg-blue-100">
-              <FileText className="h-5 w-5 text-blue-600" />
-            </div>
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-600">Today's Assigned</p>
-              <p className="text-xl font-bold text-gray-900">{stats.total}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center">
-            <div className="p-3 rounded-full bg-yellow-100">
-              <AlertCircle className="h-5 w-5 text-yellow-600" />
-            </div>
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-600">Pending Qualification</p>
-              <p className="text-xl font-bold text-gray-900">{stats.pendingQualificationCount}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center">
-            <div className="p-3 rounded-full bg-orange-100">
-              <Clock className="h-5 w-5 text-orange-600" />
-            </div>
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-600">Callback Needed</p>
-              <p className="text-xl font-bold text-gray-900">{stats.callbackNeededCount}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center">
-            <div className="p-3 rounded-full bg-green-100">
-              <CheckCircle className="h-5 w-5 text-green-600" />
-            </div>
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-600">Follow Up</p>
-              <p className="text-xl font-bold text-gray-900">{stats.followUp}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center">
-            <div className="p-3 rounded-full bg-emerald-100">
-              <CheckCircle className="h-5 w-5 text-emerald-600" />
-            </div>
-            <div className="ml-3">
-              <p className="text-sm font-medium text-gray-600">Successful</p>
-              <p className="text-xl font-bold text-gray-900">{stats.successful}</p>
-            </div>
-          </div>
-        </div>
-      </div>
-
-      {/* Tabs Navigation */}
-      <div className="border-b border-gray-200">
-        <nav className="-mb-px flex space-x-8">
+        {/* Create Lead Button - Only for Agent2 */}
+        {user.role === 'agent2' && (
           <button
-            onClick={() => setActiveTab('today')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'today'
-                ? 'border-primary-500 text-primary-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
+            onClick={() => setShowCreateForm(true)}
+            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
           >
-            Today's Leads ({stats.todaysLeads?.length || 0})
+            <Plus className="h-4 w-4" />
+            Create Lead
           </button>
-          <button
-            onClick={() => setActiveTab('pending-qualification')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'pending-qualification'
-                ? 'border-yellow-500 text-yellow-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            Pending Qualification ({stats.pendingQualificationCount || 0})
-          </button>
-          <button
-            onClick={() => setActiveTab('callback-needed')}
-            className={`py-2 px-1 border-b-2 font-medium text-sm ${
-              activeTab === 'callback-needed'
-                ? 'border-orange-500 text-orange-600'
-                : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-            }`}
-          >
-            Callback Needed ({stats.callbackNeededCount || 0})
-          </button>
-        </nav>
+        )}
       </div>
+
+      {/* Agent2 Dashboard Summary - Only for Agent2 */}
+      {user.role === 'agent2' && (
+        <>
+          <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
+            {/* Today's Assigned Leads */}
+            <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+              <div className="text-center">
+                <h3 className="text-lg font-medium text-gray-900 mb-2">Today's Assigned</h3>
+                <div className="text-2xl font-bold text-green-600">
+                  {stats.todaysLeads?.length || 0}
+                </div>
+                <p className="text-sm text-gray-600">leads assigned today</p>
+              </div>
+            </div>
+
+            {/* Pending Qualification */}
+            <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+              <div className="text-center">
+                <h3 className="text-lg font-medium text-gray-900 mb-2">Pending Qualification</h3>
+                <div className="text-2xl font-bold text-yellow-600">
+                  {stats.pendingQualificationCount || 0}
+                </div>
+                <p className="text-sm text-gray-600">leads need qualification</p>
+              </div>
+            </div>
+
+            {/* Callback Needed */}
+            <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
+              <div className="text-center">
+                <h3 className="text-lg font-medium text-gray-900 mb-2">Callback Needed</h3>
+                <div className="text-2xl font-bold text-orange-600">
+                  {stats.callbackNeededCount || 0}
+                </div>
+                <p className="text-sm text-gray-600">leads need callback</p>
+              </div>
+            </div>
+          </div>
+
+          {/* Stats Cards */}
+          <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-5 gap-4">
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+              <div className="flex items-center">
+                <div className="p-3 rounded-full bg-blue-100">
+                  <FileText className="h-5 w-5 text-blue-600" />
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm font-medium text-gray-600">Today's Assigned</p>
+                  <p className="text-xl font-bold text-gray-900">{stats.total}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+              <div className="flex items-center">
+                <div className="p-3 rounded-full bg-yellow-100">
+                  <AlertCircle className="h-5 w-5 text-yellow-600" />
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm font-medium text-gray-600">Pending Qualification</p>
+                  <p className="text-xl font-bold text-gray-900">{stats.pendingQualificationCount}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+              <div className="flex items-center">
+                <div className="p-3 rounded-full bg-orange-100">
+                  <Clock className="h-5 w-5 text-orange-600" />
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm font-medium text-gray-600">Callback Needed</p>
+                  <p className="text-xl font-bold text-gray-900">{stats.callbackNeededCount}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+              <div className="flex items-center">
+                <div className="p-3 rounded-full bg-green-100">
+                  <CheckCircle className="h-5 w-5 text-green-600" />
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm font-medium text-gray-600">Follow Up</p>
+                  <p className="text-xl font-bold text-gray-900">{stats.followUp}</p>
+                </div>
+              </div>
+            </div>
+
+            <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+              <div className="flex items-center">
+                <div className="p-3 rounded-full bg-emerald-100">
+                  <CheckCircle className="h-5 w-5 text-emerald-600" />
+                </div>
+                <div className="ml-3">
+                  <p className="text-sm font-medium text-gray-600">Successful</p>
+                  <p className="text-xl font-bold text-gray-900">{stats.successful}</p>
+                </div>
+              </div>
+            </div>
+          </div>
+        </>
+      )}
+
+      {/* Tabs Navigation - Only for Agent2 */}
+      {user.role === 'agent2' && (
+        <div className="border-b border-gray-200">
+          <nav className="-mb-px flex space-x-8">
+            <button
+              onClick={() => setActiveTab('today')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'today'
+                  ? 'border-primary-500 text-primary-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Today's Leads ({stats.todaysLeads?.length || 0})
+            </button>
+            <button
+              onClick={() => setActiveTab('pending-qualification')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'pending-qualification'
+                  ? 'border-yellow-500 text-yellow-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Pending Qualification ({stats.pendingQualificationCount || 0})
+            </button>
+            <button
+              onClick={() => setActiveTab('callback-needed')}
+              className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                activeTab === 'callback-needed'
+                  ? 'border-orange-500 text-orange-600'
+                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+              }`}
+            >
+              Callback Needed ({stats.callbackNeededCount || 0})
+            </button>
+          </nav>
+        </div>
+      )}
 
       {/* Filters - Only show for today's leads tab */}
       {activeTab === 'today' && (
@@ -2592,8 +2606,8 @@ const Agent2Dashboard = () => {
         </div>
       )}
 
-      {/* Create Lead Form Modal */}
-      {showCreateForm && (
+      {/* Create Lead Form Modal - Only for Agent2 */}
+      {user.role === 'agent2' && showCreateForm && (
         <div className="fixed inset-0 bg-gray-600 bg-opacity-50 overflow-y-auto h-full w-full z-50">
           <div className="relative top-10 mx-auto p-5 border w-full max-w-4xl shadow-lg rounded-md bg-white">
             <div className="mt-3">

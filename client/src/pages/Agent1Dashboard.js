@@ -487,6 +487,9 @@ const Agent1Dashboard = () => {
       console.log('Lead creation response:', response);
       console.log('Lead creation response data:', response.data);
       
+      // Store the created lead data
+      const createdLead = response.data.data || response.data;
+      
       // Check if lead is a duplicate
       if (response.data.isDuplicate) {
         const duplicateInfo = response.data.duplicateInfo;
@@ -531,7 +534,11 @@ const Agent1Dashboard = () => {
       
       setShowForm(false);
 
-      fetchLeads(pagination.page);
+      // Refresh leads list
+      await fetchLeads(pagination.page);
+      
+      // Automatically open assign modal with the newly created lead
+      await openAssignModal(createdLead);
     } catch (error) {
       console.error('Error creating lead:', error);
       console.error('Error response:', error.response);
