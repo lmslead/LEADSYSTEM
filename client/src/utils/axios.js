@@ -26,7 +26,7 @@ export const apiBaseURL = resolveApiBaseUrl();
 // Create axios instance with base configuration
 const axiosInstance = axios.create({
   baseURL: apiBaseURL,
-  timeout: 10000,
+  timeout: 30000, // Increased to 30s for production data loads
   headers: {
     'Content-Type': 'application/json',
   },

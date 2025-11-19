@@ -866,7 +866,8 @@ const Agent1Dashboard = () => {
 
     try {
       setSubmitting(true);
-      await axios.post(`/api/leads/${assigningLead.leadId}/assign`, assignmentData);
+      const leadIdentifier = assigningLead.leadId || assigningLead._id;
+      await axios.post(`/api/leads/${leadIdentifier}/assign`, assignmentData);
       
       toast.success('Lead assigned successfully!');
       setShowAssignModal(false);

@@ -2136,24 +2136,50 @@ router.get('/dashboard/stats', protect, async (req, res) => {
       });
       stats.activeAgents = activeAgents;
     } else if (role === 'admin') {
-      // Admin sees only data from their organization
-      const userOrganizationIds = await User.find({ 
-        organization: req.user.organization 
-      }).distinct('_id');
+      // Admin sees only data from their organization - OPTIMIZED with aggregation
+      const orgFilter = { organization: req.user.organization };
       
-      const orgFilter = { createdBy: { $in: userOrganizationIds } };
-      
-      const [total, newLeads, qualified, notQualified, pending, followUp, converted, closed, immediateEnrollment] = await Promise.all([
-        Lead.countDocuments(orgFilter),
-        Lead.countDocuments({ ...orgFilter, status: 'new' }),
-        Lead.countDocuments({ ...orgFilter, qualificationStatus: 'qualified' }),
-        Lead.countDocuments({ ...orgFilter, qualificationStatus: { $in: ['not-qualified', 'disqualified', 'unqualified'] } }),
-        Lead.countDocuments({ ...orgFilter, qualificationStatus: 'pending' }),
-        Lead.countDocuments({ ...orgFilter, status: 'follow-up' }),
-        Lead.countDocuments({ ...orgFilter, status: 'converted' }),
-        Lead.countDocuments({ ...orgFilter, status: 'closed' }),
-        Lead.countDocuments({ ...orgFilter, leadProgressStatus: { $in: ['SALE', 'Immediate Enrollment'] } })
+      // Use single aggregation pipeline for better performance
+      const aggregationResults = await Lead.aggregate([
+        { $match: orgFilter },
+        {
+          $facet: {
+            total: [{ $count: 'count' }],
+            byStatus: [
+              { $group: { _id: '$status', count: { $sum: 1 } } }
+            ],
+            byQualification: [
+              { $group: { _id: '$qualificationStatus', count: { $sum: 1 } } }
+            ],
+            sales: [
+              { $match: { leadProgressStatus: { $in: ['SALE', 'Immediate Enrollment'] } } },
+              { $count: 'count' }
+            ]
+          }
+        }
       ]);
+
+      const results = aggregationResults[0];
+      const total = results.total[0]?.count || 0;
+      
+      const statusMap = {};
+      results.byStatus.forEach(item => {
+        statusMap[item._id] = item.count;
+      });
+      
+      const qualMap = {};
+      results.byQualification.forEach(item => {
+        qualMap[item._id] = item.count;
+      });
+      
+      const newLeads = statusMap.new || 0;
+      const qualified = qualMap.qualified || 0;
+      const notQualified = (qualMap['not-qualified'] || 0) + (qualMap.disqualified || 0) + (qualMap.unqualified || 0);
+      const pending = qualMap.pending || 0;
+      const followUp = statusMap['follow-up'] || 0;
+      const converted = statusMap.converted || 0;
+      const closed = statusMap.closed || 0;
+      const immediateEnrollment = results.sales[0]?.count || 0;
 
       // Get active agents count from admin's organization only
       const activeAgents = await User.countDocuments({ 
