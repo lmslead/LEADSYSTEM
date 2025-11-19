@@ -6,7 +6,7 @@ const router = express.Router();
 
 const incomingLimiter = rateLimit({
   windowMs: 60 * 1000,
-  max: 300,
+  max: 6000,
   standardHeaders: true,
   legacyHeaders: false
 });
