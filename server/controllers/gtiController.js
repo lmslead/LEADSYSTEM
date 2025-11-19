@@ -53,7 +53,7 @@ const handleIncomingGtiCall = async (req, res) => {
       return res.status(200).json({ status: 'duplicate' });
     }
 
-    return res.status(200).json({});
+    return res.status(200).json({ status: 'new lead' });
   } catch (error) {
     console.error('GTI incoming webhook error:', error);
     return res.status(500).json({ message: 'Internal server error' });
