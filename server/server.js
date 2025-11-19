@@ -16,6 +16,7 @@ require('dotenv').config();
 const authRoutes = require('./routes/auth');
 const leadRoutes = require('./routes/leads');
 const organizationRoutes = require('./routes/organizations');
+const gtiIncomingRoutes = require('./routes/gtiIncoming');
 
 const app = express();
 
@@ -129,6 +130,7 @@ app.use((req, res, next) => {
 app.use('/api/auth', authRoutes);
 app.use('/api/leads', leadRoutes);
 app.use('/api/organizations', organizationRoutes);
+app.use('/api/gti', gtiIncomingRoutes);
 
 // Serve static files in production
 if (process.env.NODE_ENV === 'production') {

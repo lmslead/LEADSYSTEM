@@ -16,7 +16,16 @@ import axios from '../utils/axios';
 import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Pagination from '../components/Pagination';
-import { formatEasternTimeForDisplay, getEasternNow, getEasternStartOfDay, getEasternEndOfDay } from '../utils/dateUtils';
+import { isGtiOrganization } from '../config/constants';
+import { 
+  formatEasternTimeForDisplay, 
+  getEasternNow, 
+  getEasternStartOfDay, 
+  getEasternEndOfDay,
+  formatDateAsDDMMYYYY,
+  isValidDDMMYYYY,
+  parseDDMMYYYYToISO
+} from '../utils/dateUtils';
 
 // Unified Lead Progress Status options for Agent 2
 const agent2LeadProgressOptions = [
@@ -26,6 +35,7 @@ const agent2LeadProgressOptions = [
   "Unacceptable Creditors",
   "Not Serviceable State",
   "Sale Long Play",
+  "Request for Loan",
   "DO NOT CALL - Litigator",
   "DO NOT CALL",
   "Hang-up",
@@ -145,6 +155,54 @@ const Agent2Dashboard = () => {
     email: ''
   });
 
+  const getLeadOrganizationName = (lead) => {
+    if (!lead) return '';
+    if (lead.organization && typeof lead.organization === 'object') {
+      return lead.organization.name || '';
+    }
+    if (typeof lead.organization === 'string') {
+      return lead.organization;
+    }
+    if (lead.organizationName) {
+      return lead.organizationName;
+    }
+    return '';
+  };
+
+  const isLeadGti = (lead) => isGtiOrganization(getLeadOrganizationName(lead));
+
+  const autoFormatDraftDateInput = (value = '') => {
+    const digits = value.replace(/\D/g, '').slice(0, 8);
+    if (digits.length <= 2) return digits;
+    if (digits.length <= 4) return `${digits.slice(0, 2)}/${digits.slice(2)}`;
+    return `${digits.slice(0, 2)}/${digits.slice(2, 4)}/${digits.slice(4)}`;
+  };
+
+  const handleDraftDateChange = (value) => {
+    setDraftDateDirty(true);
+    const formatted = autoFormatDraftDateInput(value || '');
+    setUpdateData((prev) => ({ ...prev, draftDate: formatted }));
+
+    if (!formatted) {
+      setDraftDateError('');
+      return;
+    }
+
+    if (formatted.length === 10) {
+      setDraftDateError(isValidDDMMYYYY(formatted) ? '' : 'Draft date must be a valid dd/mm/yyyy value');
+    } else {
+      setDraftDateError('');
+    }
+  };
+
+  const handleRequestedLoanAmountChange = (value = '') => {
+    const digitsOnly = value.replace(/[^0-9]/g, '');
+    setUpdateData((prev) => ({
+      ...prev,
+      requestedLoanAmount: digitsOnly
+    }));
+  };
+
   // Utility functions to mask sensitive data
   const maskEmail = (email) => {
     if (!email) return '—';
@@ -183,8 +241,13 @@ const Agent2Dashboard = () => {
     followUpTime: '',
     followUpNotes: '',
     conversionValue: '',
-    qualificationStatus: ''
+    qualificationStatus: '',
+    draftDate: '',
+    requestedLoanAmount: ''
   });
+
+  const [draftDateError, setDraftDateError] = useState('');
+  const [draftDateDirty, setDraftDateDirty] = useState(false);
 
   // State for handling "Others" custom disposition
   const [customDisposition, setCustomDisposition] = useState('');
@@ -368,6 +431,7 @@ const Agent2Dashboard = () => {
   const handleUpdateLead = async (e) => {
     e.preventDefault();
     setUpdating(true);
+    const isSelectedLeadGti = isLeadGti(selectedLead);
 
     try {
       console.log('Form submission - updateData:', updateData);
@@ -399,16 +463,32 @@ const Agent2Dashboard = () => {
           console.log('Using standard disposition:', updateData.leadProgressStatus);
         }
         // Add metadata for admin tracking
-        cleanUpdateData.lastUpdatedBy = user?.name || 'Agent2';
-        cleanUpdateData.lastUpdatedAt = getEasternNow().toISOString();  
         cleanUpdateData.agent2LastAction = updateData.leadProgressStatus === 'Others' ? customDisposition.trim() : updateData.leadProgressStatus;
+
+        if (updateData.leadProgressStatus === 'Request for Loan') {
+          const rawAmount = (updateData.requestedLoanAmount || '').trim();
+          if (!rawAmount) {
+            toast.error('Requested loan amount is required for this status');
+            setUpdating(false);
+            return;
+          }
+
+          const parsedAmount = parseInt(rawAmount, 10);
+          if (!Number.isInteger(parsedAmount) || parsedAmount <= 0) {
+            toast.error('Requested loan amount must be a positive whole number');
+            setUpdating(false);
+            return;
+          }
+
+          cleanUpdateData.requestedLoanAmount = parsedAmount;
+        } else if (selectedLead && (selectedLead.requestedLoanAmount || updateData.requestedLoanAmount)) {
+          cleanUpdateData.requestedLoanAmount = null;
+        }
       }
 
       // Add qualification status - independent from leadProgressStatus
       if (updateData.qualificationStatus && updateData.qualificationStatus !== '') {
         cleanUpdateData.qualificationStatus = updateData.qualificationStatus;
-        cleanUpdateData.lastUpdatedBy = user?.name || 'Agent2';
-        cleanUpdateData.lastUpdatedAt = getEasternNow().toISOString();
       }
       
       // Only add optional fields if they have values
@@ -424,6 +504,22 @@ const Agent2Dashboard = () => {
       if (updateData.conversionValue && updateData.conversionValue !== '') {
         cleanUpdateData.conversionValue = parseFloat(updateData.conversionValue);
       }
+
+      if (isSelectedLeadGti && draftDateDirty) {
+        const trimmedDraft = (updateData.draftDate || '').trim();
+        if (!trimmedDraft) {
+          cleanUpdateData.draftDate = null;
+          setDraftDateError('');
+        } else if (!isValidDDMMYYYY(trimmedDraft)) {
+          setDraftDateError('Draft date must be a valid dd/mm/yyyy value');
+          toast.error('Draft date must follow dd/mm/yyyy format');
+          setUpdating(false);
+          return;
+        } else {
+          cleanUpdateData.draftDate = trimmedDraft;
+          setDraftDateError('');
+        }
+      }
       
       console.log('Update form data:', updateData);
       console.log('Sending update request with cleaned data:', cleanUpdateData);
@@ -434,6 +530,13 @@ const Agent2Dashboard = () => {
       if (Object.keys(cleanUpdateData).length === 0) {
         toast.error('Please select at least one field to update');
         return;
+      }
+
+      if (!cleanUpdateData.lastUpdatedBy) {
+        cleanUpdateData.lastUpdatedBy = user?.name || 'Agent2';
+      }
+      if (!cleanUpdateData.lastUpdatedAt) {
+        cleanUpdateData.lastUpdatedAt = getEasternNow().toISOString();
       }
       
       // Use MongoDB _id instead of leadId for consistency with backend
@@ -450,6 +553,9 @@ const Agent2Dashboard = () => {
       
       // Update the selected lead with new data to show immediately in view modal
       const updatedLead = { ...selectedLead, ...cleanUpdateData };
+      if (cleanUpdateData.draftDate !== undefined) {
+        updatedLead.draftDate = cleanUpdateData.draftDate ? parseDDMMYYYYToISO(cleanUpdateData.draftDate) : null;
+      }
       setSelectedLead(updatedLead);
       
       // Close modal after a short delay to ensure data is refreshed
@@ -461,7 +567,9 @@ const Agent2Dashboard = () => {
           followUpTime: '',
           followUpNotes: '',
           conversionValue: '',
-          qualificationStatus: ''
+          qualificationStatus: '',
+          draftDate: '',
+          requestedLoanAmount: ''
         });
       }, 500);
     } catch (error) {
@@ -676,6 +784,7 @@ const Agent2Dashboard = () => {
     setSelectedLead(lead);
     
     const currentStatus = lead.leadProgressStatus || lead.agent2LastAction || '';
+    const leadDraftDate = isLeadGti(lead) ? formatDateAsDDMMYYYY(lead.draftDate) : '';
     
     setUpdateData({
       leadProgressStatus: currentStatus,
@@ -683,8 +792,13 @@ const Agent2Dashboard = () => {
       followUpTime: lead.followUpTime || '',
       followUpNotes: lead.followUpNotes || '',
       conversionValue: lead.conversionValue || '',
-      qualificationStatus: lead.qualificationStatus || ''
+      qualificationStatus: lead.qualificationStatus || '',
+      draftDate: leadDraftDate,
+      requestedLoanAmount: lead.requestedLoanAmount ? String(lead.requestedLoanAmount) : ''
     });
+
+    setDraftDateDirty(false);
+    setDraftDateError('');
     
     // Initialize custom disposition states based on current status
     if (currentStatus === 'Others') {
@@ -710,13 +824,17 @@ const Agent2Dashboard = () => {
     setCustomDisposition('');
     setShowCustomDisposition(false);
     setSelectedLead(null);
+    setDraftDateDirty(false);
+    setDraftDateError('');
     setUpdateData({
       leadProgressStatus: '',
       followUpDate: '',
       followUpTime: '',
       followUpNotes: '',
       conversionValue: '',
-      qualificationStatus: ''
+      qualificationStatus: '',
+      draftDate: '',
+      requestedLoanAmount: ''
     });
   };
 
@@ -2120,6 +2238,12 @@ const Agent2Dashboard = () => {
                             )}
                           </div>
                         )}
+                        {selectedLead.requestedLoanAmount && Number(selectedLead.requestedLoanAmount) > 0 && (
+                          <div className="text-sm">
+                            <span className="font-medium text-gray-700">Requested Loan Amount:</span>{' '}
+                            <span className="text-gray-600">${Number(selectedLead.requestedLoanAmount).toLocaleString()}</span>
+                          </div>
+                        )}
                         {selectedLead.followUpNotes && (
                           <div className="text-sm">
                             <span className="font-medium text-gray-700">Last Notes:</span>{' '}
@@ -2141,7 +2265,11 @@ const Agent2Dashboard = () => {
                         value={updateData.leadProgressStatus}
                         onChange={(e) => {
                           const newValue = e.target.value;
-                          setUpdateData({ ...updateData, leadProgressStatus: newValue });
+                          setUpdateData((prev) => ({
+                            ...prev,
+                            leadProgressStatus: newValue,
+                            requestedLoanAmount: newValue === 'Request for Loan' ? (prev.requestedLoanAmount || '') : ''
+                          }));
                           setShowCustomDisposition(newValue === 'Others');
                           if (newValue !== 'Others') {
                             setCustomDisposition('');
@@ -2171,6 +2299,24 @@ const Agent2Dashboard = () => {
                         {showCustomDisposition && !customDisposition.trim() && (
                           <p className="mt-1 text-sm text-red-500">Custom disposition is required when "Others" is selected</p>
                         )}
+                      </div>
+                    )}
+
+                    {updateData.leadProgressStatus === 'Request for Loan' && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">
+                          Requested Loan Amount <span className="text-red-500">*</span>
+                        </label>
+                        <input
+                          type="text"
+                          inputMode="numeric"
+                          pattern="[0-9]*"
+                          className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                          value={updateData.requestedLoanAmount}
+                          onChange={(e) => handleRequestedLoanAmountChange(e.target.value)}
+                          placeholder="Enter amount in whole dollars"
+                        />
+                        <p className="mt-1 text-xs text-gray-500">Whole numbers only (no decimals or symbols).</p>
                       </div>
                     )}
 
@@ -2242,6 +2388,25 @@ const Agent2Dashboard = () => {
                           onChange={(e) => setUpdateData({ ...updateData, conversionValue: e.target.value })}
                           placeholder="Enter conversion value"
                         />
+                      </div>
+                    )}
+
+                    {selectedLead && isLeadGti(selectedLead) && (
+                      <div>
+                        <label className="block text-sm font-medium text-gray-700">Draft Date </label>
+                        <input
+                          type="text"
+                          name="draftDate"
+                          placeholder="dd/mm/yyyy"
+                          className={`mt-1 block w-full border rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500 ${draftDateError ? 'border-red-500' : 'border-gray-300'}`}
+                          value={updateData.draftDate}
+                          onChange={(e) => handleDraftDateChange(e.target.value)}
+                        />
+                        {draftDateError ? (
+                          <p className="mt-1 text-sm text-red-500">{draftDateError}</p>
+                        ) : (
+                          <p className="mt-1 text-xs text-gray-500">Format: dd/mm/yyyy. Leave blank to clear.</p>
+                        )}
                       </div>
                     )}
                   </div>

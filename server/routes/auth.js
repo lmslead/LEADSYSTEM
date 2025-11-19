@@ -258,6 +258,9 @@ router.post('/login', loginValidation, handleValidationErrors, async (req, res) 
       });
     }
 
+    // Populate organization name for client-side role checks
+    await user.populate('organization', 'name');
+
     // Update last login
     user.lastLogin = new Date();
     await user.save();
@@ -290,6 +293,10 @@ router.post('/login', loginValidation, handleValidationErrors, async (req, res) 
 router.get('/me', protect, async (req, res) => {
   try {
     const user = req.user;
+
+    if (user && user.populate) {
+      await user.populate('organization', 'name');
+    }
 
     res.status(200).json({
       success: true,

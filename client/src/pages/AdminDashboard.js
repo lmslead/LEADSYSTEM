@@ -28,7 +28,8 @@ import { useRefresh } from '../contexts/RefreshContext';
 import { scrollToTop } from '../utils/scrollUtils';
 import { 
   formatEasternTimeForDisplay, 
-  getEasternNow
+  getEasternNow,
+  formatDateAsDDMMYYYY
 } from '../utils/dateUtils';
 
 const AdminDashboard = () => {
@@ -97,6 +98,17 @@ const AdminDashboard = () => {
     const cleaned = phone.replace(/\D/g, '');
     if (cleaned.length <= 4) return '***-****';
     return `***-***-${cleaned.slice(-4)}`;
+  };
+
+  const formatDraftDate = (dateValue) => formatDateAsDDMMYYYY(dateValue) || '—';
+
+  const formatDisposedByLabel = (disposedBy) => {
+    if (!disposedBy) return '—';
+    if (typeof disposedBy === 'string') return disposedBy;
+    if (disposedBy.name) return disposedBy.name;
+    if (disposedBy.email) return disposedBy.email;
+    if (disposedBy._id) return disposedBy._id;
+    return '—';
   };
 
   // NOTE: Date filtering is now handled by the backend for better performance and accuracy
@@ -799,12 +811,14 @@ const AdminDashboard = () => {
   };
 
   const getStatusBadge = (status) => {
+    const normalizedStatus = typeof status === 'string' ? status.toLowerCase() : '';
     const badges = {
       new: 'bg-gray-100 text-gray-800',
       interested: 'bg-green-100 text-green-800',
       'not-interested': 'bg-red-100 text-red-800',
       successful: 'bg-emerald-100 text-emerald-800',
-      'follow-up': 'bg-blue-100 text-blue-800'
+      'follow-up': 'bg-blue-100 text-blue-800',
+      dead: 'bg-rose-100 text-rose-800'
     };
 
     const icons = {
@@ -812,15 +826,19 @@ const AdminDashboard = () => {
       interested: CheckCircle,
       'not-interested': XCircle,
       successful: CheckCircle,
-      'follow-up': Clock
+      'follow-up': Clock,
+      dead: XCircle
     };
 
-    const Icon = icons[status] || AlertCircle; // Added fallback to prevent undefined
+    const Icon = icons[normalizedStatus] || AlertCircle; // Added fallback to prevent undefined
+    const readableStatus = status
+      ? status.replace('-', ' ').replace(/\b\w/g, (l) => l.toUpperCase())
+      : 'Unknown';
 
     return (
-      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${badges[status] || 'bg-gray-100 text-gray-800'}`}>
+      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${badges[normalizedStatus] || 'bg-gray-100 text-gray-800'}`}>
         <Icon className="w-3 h-3 mr-1" />
-        {status?.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase()) || 'Unknown'}
+        {readableStatus}
       </span>
     );
   };
@@ -1559,6 +1577,30 @@ const AdminDashboard = () => {
                               ✓ Orig
                             </span>
                           )}
+                          {lead.isDisposed && (
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-semibold bg-rose-100 text-rose-700">
+                              Disposed
+                            </span>
+                          )}
+                          {lead.disposition1 && (
+                            <div className="text-xs text-rose-600 truncate" title={`Disposition: ${lead.disposition1}`}>
+                              Reason: {lead.disposition1}
+                            </div>
+                          )}
+                          {(lead.disposedBy || lead.draftDate) && (
+                            <div className="text-[11px] text-gray-500 space-y-0.5">
+                              {lead.disposedBy && (
+                                <div title={`Disposed by ${formatDisposedByLabel(lead.disposedBy)}`}>
+                                  By {formatDisposedByLabel(lead.disposedBy)}
+                                </div>
+                              )}
+                              {lead.draftDate && (
+                                <div>
+                                  Draft Date: {formatDraftDate(lead.draftDate)}
+                                </div>
+                              )}
+                            </div>
+                          )}
                         </div>
                       </div>
 
@@ -1954,6 +1996,30 @@ const AdminDashboard = () => {
                           <span className="text-sm text-gray-900 text-right">{selectedLead.creditScoreRange || '—'}</span>
                         )}
                       </div>
+                    </div>
+                  </div>
+                </div>
+
+                <div className="mt-6 bg-gradient-to-br from-indigo-50 to-indigo-100 p-5 rounded-xl border border-indigo-200">
+                  <h4 className="text-lg font-semibold text-gray-800 mb-4">GTI Workflow Snapshot</h4>
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+                    <div>
+                      <span className="text-sm font-medium text-gray-600">Disposition Status:</span>
+                      <p className={`mt-1 inline-flex items-center px-2 py-0.5 rounded text-xs font-semibold ${selectedLead.isDisposed ? 'bg-rose-100 text-rose-700' : 'bg-emerald-100 text-emerald-700'}`}>
+                        {selectedLead.isDisposed ? 'Disposed' : 'Active'}
+                      </p>
+                    </div>
+                    <div>
+                      <span className="text-sm font-medium text-gray-600">Disposition Reason:</span>
+                      <p className="mt-1 text-sm text-gray-900 break-words">{selectedLead.disposition1 || '—'}</p>
+                    </div>
+                    <div>
+                      <span className="text-sm font-medium text-gray-600">Disposed By:</span>
+                      <p className="mt-1 text-sm text-gray-900">{formatDisposedByLabel(selectedLead.disposedBy)}</p>
+                    </div>
+                    <div>
+                      <span className="text-sm font-medium text-gray-600">Draft Date:</span>
+                      <p className="mt-1 text-sm text-gray-900">{formatDraftDate(selectedLead.draftDate)}</p>
                     </div>
                   </div>
                 </div>

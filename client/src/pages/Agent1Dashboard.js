@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useMemo } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useRefresh } from '../contexts/RefreshContext';
 import { scrollToTop } from '../utils/scrollUtils';
@@ -13,6 +13,22 @@ import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Pagination from '../components/Pagination';
 import { formatEasternTimeForDisplay, getEasternStartOfDay, getEasternEndOfDay } from '../utils/dateUtils';
+import { isGtiOrganization } from '../config/constants';
+
+const GTI_DISPOSITION_OPTIONS = [
+  'Not Qualified',
+  'Hangup',
+  'Already a Customer',
+  'Wrong Number',
+  'Not Interested',
+  'Invalid Number',
+  'Other'
+];
+
+const INITIAL_GTI_DISPOSITION_STATE = {
+  dispositionReason: '',
+  customReason: ''
+};
 
 const Agent1Dashboard = () => {
   const { user } = useAuth();
@@ -42,7 +58,8 @@ const Agent1Dashboard = () => {
   // Error state for form validation
   const [formErrors, setFormErrors] = useState({
     phone: '',
-    alternatePhone: ''
+    alternatePhone: '',
+    dispositionReason: ''
   });
 
   // Utility functions to mask sensitive data
@@ -108,6 +125,45 @@ const Agent1Dashboard = () => {
     zipcode: '',
     notes: ''
   });
+  const [gtiDispositionState, setGtiDispositionState] = useState({ ...INITIAL_GTI_DISPOSITION_STATE });
+
+  const isAgent1GtiOrg = useMemo(
+    () => isGtiOrganization(user?.organization || user?.organizationName || null),
+    [user]
+  );
+
+  const hasSelectedGtiDisposition = isAgent1GtiOrg && Boolean((gtiDispositionState.dispositionReason || '').trim());
+  const primaryActionLabel = hasSelectedGtiDisposition ? 'Dispose Lead' : 'Add Lead';
+  const primaryActionBusyLabel = hasSelectedGtiDisposition ? 'Disposing Lead...' : 'Adding Lead...';
+
+  const resetGtiDispositionState = useCallback(() => {
+    setGtiDispositionState({ ...INITIAL_GTI_DISPOSITION_STATE });
+  }, []);
+
+  const handleDispositionSelect = (event) => {
+    const value = event.target.value;
+    setGtiDispositionState((prev) => ({
+      ...prev,
+      dispositionReason: value,
+      customReason: value === 'Other' ? prev.customReason : ''
+    }));
+    setFormErrors((prev) => ({ ...prev, dispositionReason: '' }));
+  };
+
+  const handleCustomDispositionChange = (event) => {
+    const value = event.target.value;
+    setGtiDispositionState((prev) => ({
+      ...prev,
+      customReason: value
+    }));
+    setFormErrors((prev) => ({ ...prev, dispositionReason: '' }));
+  };
+
+  const closeCreateLeadModal = useCallback(() => {
+    setShowForm(false);
+    resetGtiDispositionState();
+    setFormErrors((prev) => ({ ...prev, dispositionReason: '' }));
+  }, [resetGtiDispositionState]);
 
   const fetchLeads = useCallback(async (page = 1) => {
     try {
@@ -156,7 +212,7 @@ const Agent1Dashboard = () => {
     scrollToTop();
     
     // Reset form and close modals
-    setShowForm(false);
+    closeCreateLeadModal();
     setShowEditModal(false);
     setShowAssignModal(false);
     setEditingLead(null);
@@ -168,7 +224,7 @@ const Agent1Dashboard = () => {
     // Refetch leads
     fetchLeads(1);
     toast.success('Dashboard refreshed!');
-  }, [fetchLeads]);
+  }, [closeCreateLeadModal, fetchLeads]);
 
   // Register refresh callback
   useEffect(() => {
@@ -270,7 +326,7 @@ const Agent1Dashboard = () => {
 
   // Validate all form fields before submission
   const validateForm = () => {
-    const errors = { phone: '', alternatePhone: '' };
+    const errors = { phone: '', alternatePhone: '', dispositionReason: '' };
     let isValid = true;
 
     // Primary phone is required
@@ -292,6 +348,20 @@ const Agent1Dashboard = () => {
         errors.alternatePhone = 'Phone number must be exactly 10 digits';
         isValid = false;
       }
+    }
+
+    const selectedDisposition = (gtiDispositionState.dispositionReason || '').trim();
+    const shouldDisposeLead = isAgent1GtiOrg && Boolean(selectedDisposition);
+    if (shouldDisposeLead) {
+      if (!selectedDisposition) {
+        errors.dispositionReason = 'Select a disposition reason';
+        isValid = false;
+      } else if (selectedDisposition === 'Other' && !gtiDispositionState.customReason.trim()) {
+        errors.dispositionReason = 'Enter a custom disposition reason';
+        isValid = false;
+      }
+    } else {
+      errors.dispositionReason = '';
     }
 
     setFormErrors(errors);
@@ -389,6 +459,8 @@ const Agent1Dashboard = () => {
       console.log('Form data:', formData);
       console.log('Auth token:', localStorage.getItem('token') ? 'Present' : 'Missing');
       console.log('User role:', user?.role);
+      const selectedDisposition = (gtiDispositionState.dispositionReason || '').trim();
+      const shouldDisposeLead = isAgent1GtiOrg && Boolean(selectedDisposition);
       
       // Build complete form data
       const cleanFormData = {
@@ -479,6 +551,15 @@ const Agent1Dashboard = () => {
       // Add creator information
       cleanFormData.lastUpdatedBy = user?.name || 'Agent1';
 
+      if (shouldDisposeLead) {
+        const resolvedDisposition =
+          gtiDispositionState.dispositionReason === 'Other'
+            ? gtiDispositionState.customReason.trim()
+            : selectedDisposition;
+        cleanFormData.isDisposed = true;
+        cleanFormData.disposition1 = resolvedDisposition;
+      }
+
       console.log('Agent1 sending create request with cleaned data:', cleanFormData);
       console.log('Axios defaults:', { baseURL: axios.defaults.baseURL, timeout: axios.defaults.timeout });
       console.log('Making request to:', '/api/leads');
@@ -487,12 +568,16 @@ const Agent1Dashboard = () => {
       console.log('Lead creation response:', response);
       console.log('Lead creation response data:', response.data);
       
-      // Store the created lead data
-      const createdLead = response.data.data || response.data;
+      const responsePayload = response.data?.data || {};
+      const createdLead = responsePayload.lead || responsePayload;
+      const responseIsDuplicate =
+        typeof responsePayload.isDuplicate === 'boolean'
+          ? responsePayload.isDuplicate
+          : response.data?.isDuplicate;
+      const duplicateInfo = responsePayload.duplicateInfo || response.data?.duplicateInfo;
       
       // Check if lead is a duplicate
-      if (response.data.isDuplicate) {
-        const duplicateInfo = response.data.duplicateInfo;
+      if (responseIsDuplicate && duplicateInfo) {
         const reasonText = {
           'email': 'email address',
           'phone': 'phone number', 
@@ -503,6 +588,8 @@ const Agent1Dashboard = () => {
           `Lead created but marked as duplicate due to matching ${reasonText}!`,
           { duration: 6000, icon: '⚠️' }
         );
+      } else if (shouldDisposeLead || createdLead?.isDisposed) {
+        toast.success('Lead disposed successfully!');
       } else {
         toast.success('Lead added successfully!');
       }
@@ -525,20 +612,25 @@ const Agent1Dashboard = () => {
         zipcode: '',
         notes: ''
       });
+      resetGtiDispositionState();
       
       // Clear form errors
       setFormErrors({
         phone: '',
-        alternatePhone: ''
+        alternatePhone: '',
+        dispositionReason: ''
       });
       
-      setShowForm(false);
+      closeCreateLeadModal();
 
       // Refresh leads list
       await fetchLeads(pagination.page);
       
-      // Automatically open assign modal with the newly created lead
-      await openAssignModal(createdLead);
+      const leadWasDisposed = shouldDisposeLead || createdLead?.isDisposed;
+      if (!leadWasDisposed && createdLead) {
+        // Automatically open assign modal with the newly created lead
+        await openAssignModal(createdLead);
+      }
     } catch (error) {
       console.error('Error creating lead:', error);
       console.error('Error response:', error.response);
@@ -744,6 +836,12 @@ const Agent1Dashboard = () => {
   };
 
   const openAssignModal = async (lead) => {
+    const isLeadDisposed = lead?.isDisposed || lead?.status?.toLowerCase() === 'dead';
+    if (isLeadDisposed) {
+      toast.error('Disposed leads cannot be assigned');
+      return;
+    }
+
     setAssigningLead(lead);
     setAssignmentData({
       assignedTo: '',
@@ -981,8 +1079,10 @@ const Agent1Dashboard = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {todaysLeads.map((lead) => (
-                <tr key={lead.leadId || lead._id} className="hover:bg-gray-50">
+              {todaysLeads.map((lead) => {
+                const isLeadDisposed = lead?.isDisposed || lead?.status?.toLowerCase() === 'dead';
+                return (
+                  <tr key={lead.leadId || lead._id} className="hover:bg-gray-50">
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div>
                       <div className="text-sm font-medium text-gray-900">{lead.name}</div>
@@ -1088,12 +1188,18 @@ const Agent1Dashboard = () => {
                         </button>
                       </div>
                     ) : (
-                      <button
-                        onClick={() => openAssignModal(lead)}
-                        className="text-sm text-primary-600 hover:text-primary-800 font-medium"
-                      >
-                        Assign
-                      </button>
+                      isLeadDisposed ? (
+                        <span className="text-sm text-gray-400">
+                          Disposed
+                        </span>
+                      ) : (
+                        <button
+                          onClick={() => openAssignModal(lead)}
+                          className="text-sm text-primary-600 hover:text-primary-800 font-medium"
+                        >
+                          Assign
+                        </button>
+                      )
                     )}
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap text-sm font-medium">
@@ -1105,7 +1211,8 @@ const Agent1Dashboard = () => {
                     </button>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               {leads.length === 0 && (
                 <tr>
                   <td colSpan="10" className="px-6 py-8 text-center text-gray-500">
@@ -1139,7 +1246,7 @@ const Agent1Dashboard = () => {
             <div className="fixed inset-0 transition-opacity" aria-hidden="true">
               <div 
                 className="absolute inset-0 bg-black bg-opacity-50"
-                onClick={() => setShowForm(false)}
+                onClick={closeCreateLeadModal}
               ></div>
             </div>
 
@@ -1154,7 +1261,7 @@ const Agent1Dashboard = () => {
                     </div>
                     <button
                       type="button"
-                      onClick={() => setShowForm(false)}
+                      onClick={closeCreateLeadModal}
                       className="text-white hover:text-primary-200 transition-colors"
                     >
                       <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1498,13 +1605,84 @@ const Agent1Dashboard = () => {
                       </div>
                     </div>
                   </div>
+
+                  {isAgent1GtiOrg && (
+                    <div className="mt-8 border-t border-gray-200 pt-6">
+                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
+                        <div>
+                          <p className="text-base font-semibold text-gray-900">GTI Disposition Reason</p>
+                          <p className="text-sm text-gray-600">
+                            Choose a reason to dispose this lead immediately. Leave it blank to add the lead normally.
+                          </p>
+                        </div>
+                        <div className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-md">
+                          Action button updates automatically
+                        </div>
+                      </div>
+
+                      <div className="mt-6 space-y-4">
+                        <div>
+                          <label className="block text-sm font-semibold text-gray-700 mb-2">
+                            Disposition Reason
+                          </label>
+                          <select
+                            value={gtiDispositionState.dispositionReason}
+                            onChange={handleDispositionSelect}
+                            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white ${
+                              formErrors.dispositionReason
+                                ? 'border-red-300 focus:ring-red-500'
+                                : 'border-gray-200 focus:ring-primary-500'
+                            }`}
+                          >
+                            <option value="">Keep lead active</option>
+                            {GTI_DISPOSITION_OPTIONS.map((option) => (
+                              <option key={option} value={option}>
+                                {option}
+                              </option>
+                            ))}
+                          </select>
+                          {formErrors.dispositionReason && (
+                            <p className="mt-1 text-sm text-red-600">{formErrors.dispositionReason}</p>
+                          )}
+                        </div>
+
+                        {gtiDispositionState.dispositionReason === 'Other' && (
+                          <div>
+                            <label className="block text-sm font-semibold text-gray-700 mb-2">
+                              Custom Disposition Detail *
+                            </label>
+                            <textarea
+                              rows="2"
+                              value={gtiDispositionState.customReason}
+                              onChange={handleCustomDispositionChange}
+                              className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white resize-none ${
+                                formErrors.dispositionReason
+                                  ? 'border-red-300 focus:ring-red-500'
+                                  : 'border-gray-200 focus:ring-primary-500'
+                              }`}
+                              placeholder="Describe why this lead should be disposed"
+                            ></textarea>
+                          </div>
+                        )}
+
+                        <div className="flex items-start space-x-2 text-sm text-gray-500 bg-gray-50 border border-gray-200 rounded-lg p-3">
+                          <svg className="w-4 h-4 text-primary-600 mt-0.5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M13 16h-1v-4h-1m1-4h.01M12 18a6 6 0 100-12 6 6 0 000 12z" />
+                          </svg>
+                          <p>
+                            Disposed leads skip all assignment workflows. Provide clear reasoning so downstream reports stay accurate.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+                  )}
                 </div>
 
                 {/* Footer */}
                 <div className="bg-gray-50 px-6 py-4 flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-3">
                   <button
                     type="button"
-                    onClick={() => setShowForm(false)}
+                    onClick={closeCreateLeadModal}
                     className="w-full sm:w-auto px-6 py-2 border border-gray-300 rounded-lg text-gray-700 bg-white hover:bg-gray-50 focus:ring-2 focus:ring-gray-500 transition-all duration-200"
                   >
                     Cancel
@@ -1520,10 +1698,10 @@ const Agent1Dashboard = () => {
                           <circle className="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" strokeWidth="4"></circle>
                           <path className="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                         </svg>
-                        Adding Lead...
+                        {primaryActionBusyLabel}
                       </span>
                     ) : (
-                      'Add Lead'
+                      primaryActionLabel
                     )}
                   </button>
                 </div>

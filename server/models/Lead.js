@@ -161,6 +161,7 @@ const leadSchema = new mongoose.Schema({
           'Unacceptable Creditors',
           'Not Serviceable State',
           'Sale Long Play',
+          'Request for Loan',
           'DO NOT CALL - Litigator',
           'DO NOT CALL',
           'Hang-up',
@@ -177,6 +178,32 @@ const leadSchema = new mongoose.Schema({
       },
       message: 'Lead progress status must be a valid string'
     }
+  },
+
+  requestedLoanAmount: {
+    type: Number,
+    min: [0, 'Requested loan amount cannot be negative'],
+    validate: {
+      validator: function(value) {
+        if (value === null || value === undefined) return true;
+        return Number.isInteger(value);
+      },
+      message: 'Requested loan amount must be a whole number'
+    }
+  },
+
+  disposition1: {
+    type: String,
+    trim: true,
+    maxlength: [200, 'Disposition 1 cannot exceed 200 characters']
+  },
+  isDisposed: {
+    type: Boolean,
+    default: false
+  },
+  disposedBy: {
+    type: mongoose.Schema.Types.ObjectId,
+    ref: 'User'
   },
   
   // Lead Qualification Status (for admin filtering)
@@ -206,6 +233,9 @@ const leadSchema = new mongoose.Schema({
   followUpNotes: {
     type: String,
     maxlength: [500, 'Follow-up notes cannot exceed 500 characters']
+  },
+  draftDate: {
+    type: Date
   },
 
   // Tracking Information
@@ -304,6 +334,8 @@ leadSchema.index({ email: 1 });
 leadSchema.index({ phone: 1 });
 leadSchema.index({ isDuplicate: 1 });
 leadSchema.index({ duplicateOf: 1 });
+leadSchema.index({ isDisposed: 1 });
+leadSchema.index({ draftDate: 1 });
 
 // PERFORMANCE OPTIMIZATION: Compound indexes for frequently used query combinations
 leadSchema.index({ organization: 1, status: 1 });

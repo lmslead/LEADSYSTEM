@@ -198,3 +198,20 @@ export const isEasternBusinessHours = (date, startHour = 9, endHour = 17) => {
   
   return isWeekday && isBusinessHour;
 };
+
+export const formatDateAsDDMMYYYY = (date) => {
+  if (!date) return '';
+  const parsed = moment.utc(date);
+  return parsed.isValid() ? parsed.format('DD/MM/YYYY') : '';
+};
+
+export const isValidDDMMYYYY = (value) => {
+  if (!value) return false;
+  return moment.utc(value, 'DD/MM/YYYY', true).isValid();
+};
+
+export const parseDDMMYYYYToISO = (value) => {
+  if (!value) return null;
+  const parsed = moment.utc(value, 'DD/MM/YYYY', true);
+  return parsed.isValid() ? parsed.toISOString() : null;
+};

@@ -18,6 +18,71 @@ const EASTERN_TIMEZONE = 'America/New_York';
 
 const router = express.Router();
 
+const GTI_ORG_CANONICAL_NAME = (process.env.GTI_ORG_NAME || 'GTI').trim().toUpperCase();
+
+const normalizeOrgName = (name = '') => name.trim().toUpperCase();
+const isGtiOrganizationName = (name) => !!name && normalizeOrgName(name) === GTI_ORG_CANONICAL_NAME;
+
+const parseDraftDateInput = (value) => {
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+
+  if (value instanceof Date) {
+    return isNaN(value.getTime()) ? null : new Date(value.getTime());
+  }
+
+  if (typeof value === 'number') {
+    const numericDate = new Date(value);
+    return isNaN(numericDate.getTime()) ? null : numericDate;
+  }
+
+  if (typeof value === 'string') {
+    const trimmed = value.trim();
+    if (!trimmed) {
+      return null;
+    }
+
+    const slashMatch = trimmed.match(/^(\d{2})\/(\d{2})\/(\d{4})$/);
+    if (slashMatch) {
+      const day = parseInt(slashMatch[1], 10);
+      const month = parseInt(slashMatch[2], 10);
+      const year = parseInt(slashMatch[3], 10);
+      if (day >= 1 && day <= 31 && month >= 1 && month <= 12) {
+        const utcDate = new Date(Date.UTC(year, month - 1, day));
+        if (
+          utcDate.getUTCFullYear() === year &&
+          utcDate.getUTCMonth() === month - 1 &&
+          utcDate.getUTCDate() === day
+        ) {
+          return utcDate;
+        }
+      }
+      return null;
+    }
+
+    const parsed = new Date(trimmed);
+    return isNaN(parsed.getTime()) ? null : parsed;
+  }
+
+  return null;
+};
+
+const isValidDraftDateInput = (value) => {
+  if (value === undefined || value === null || value === '') {
+    return true;
+  }
+  return !!parseDraftDateInput(value);
+};
+
+const getOrganizationNameById = async (organizationId) => {
+  if (!organizationId) {
+    return null;
+  }
+  const org = await Organization.findById(organizationId).select('name');
+  return org ? org.name : null;
+};
+
 // Validation rules
 const createLeadValidation = [
   body('name')
@@ -129,7 +194,24 @@ const createLeadValidation = [
   body('zipcode')
     .optional({ nullable: true, checkFalsy: true })
     .isLength({ max: 20 })
-    .withMessage('Zipcode cannot exceed 20 characters')
+    .withMessage('Zipcode cannot exceed 20 characters'),
+  body('disposition1')
+    .optional({ nullable: true, checkFalsy: true })
+    .isLength({ max: 200 })
+    .withMessage('Disposition 1 cannot exceed 200 characters'),
+  body('isDisposed')
+    .optional()
+    .isBoolean()
+    .withMessage('isDisposed must be a boolean value')
+    .toBoolean(),
+  body('draftDate')
+    .optional({ nullable: true, checkFalsy: true })
+    .custom((value) => {
+      if (!isValidDraftDateInput(value)) {
+        throw new Error('Draft date must be dd/mm/yyyy or a valid ISO date');
+      }
+      return true;
+    })
 ];
 
 const updateLeadValidation = [
@@ -302,6 +384,33 @@ const updateLeadValidation = [
       }
       return true;
     }),
+  body('requestedLoanAmount')
+    .optional({ nullable: true })
+    .custom((value) => {
+      if (value === '' || value === null || value === undefined) {
+        return true;
+      }
+      if (typeof value === 'string' && value.trim() === '') {
+        return true;
+      }
+      const num = Number(value);
+      if (!Number.isInteger(num) || num <= 0) {
+        throw new Error('Requested loan amount must be a positive integer');
+      }
+      return true;
+    })
+    .customSanitizer((value) => {
+      if (value === null) {
+        return null;
+      }
+      if (value === '' || value === undefined) {
+        return undefined;
+      }
+      if (typeof value === 'string' && value.trim() === '') {
+        return undefined;
+      }
+      return Number(value);
+    }),
   body('leadProgressStatus')
     .optional({ nullable: true, checkFalsy: true })
     .custom((value) => {
@@ -314,6 +423,7 @@ const updateLeadValidation = [
         'Unacceptable Creditors',
         'Not Serviceable State',
         'Sale Long Play',
+        'Request for Loan',
         'DO NOT CALL - Litigator',
         'DO NOT CALL',
         'Hang-up',
@@ -344,7 +454,24 @@ const updateLeadValidation = [
   body('lastUpdatedAt')
     .optional()
     .isISO8601()
-    .withMessage('Last updated at must be a valid date')
+    .withMessage('Last updated at must be a valid date'),
+  body('disposition1')
+    .optional({ nullable: true, checkFalsy: true })
+    .isLength({ max: 200 })
+    .withMessage('Disposition 1 cannot exceed 200 characters'),
+  body('isDisposed')
+    .optional()
+    .isBoolean()
+    .withMessage('isDisposed must be a boolean value')
+    .toBoolean(),
+  body('draftDate')
+    .optional({ nullable: true, checkFalsy: true })
+    .custom((value) => {
+      if (!isValidDraftDateInput(value)) {
+        throw new Error('Draft date must be dd/mm/yyyy or a valid ISO date');
+      }
+      return true;
+    })
 ];
 
 // @route   GET /api/leads/export
@@ -617,6 +744,7 @@ router.get('/export', [
       .populate('assignedTo', 'name email')
       .populate('assignedBy', 'name email')
       .populate('organization', 'name description')
+      .populate('disposedBy', 'name email')
       .populate('duplicateOf', 'leadId name email phone')
       .populate('duplicateDetectedBy', 'name email')
       .sort({ createdAt: -1, _id: -1 }); // Added _id for consistent sorting
@@ -843,6 +971,7 @@ router.get('/assigned-to-me', protect, async (req, res) => {
       .populate('assignedTo', 'name email')
       .populate('assignedBy', 'name email')
       .populate('organization', 'name')
+      .populate('disposedBy', 'name email')
       .sort({ assignedAt: -1 });
 
     res.json({
@@ -1108,6 +1237,7 @@ router.get('/', protect, [
       .populate('assignedTo', 'name email')
       .populate('assignedBy', 'name email')
       .populate('organization', 'name description')
+      .populate('disposedBy', 'name email')
       .populate('duplicateOf', 'leadId name email phone')
       .populate('duplicateDetectedBy', 'name email')
       .sort({ createdAt: -1, _id: -1 }) // Added _id for consistent sorting
@@ -1207,7 +1337,8 @@ router.get('/:id', protect, async (req, res) => {
       .populate('createdBy', 'name email organization')
       .populate('updatedBy', 'name email')
       .populate('assignedTo', 'name email')
-      .populate('assignedBy', 'name email');
+      .populate('assignedBy', 'name email')
+      .populate('disposedBy', 'name email');
 
     if (!lead) {
       return res.status(404).json({
@@ -1274,8 +1405,59 @@ router.post('/', protect, createLeadValidation, handleValidationErrors, async (r
       organization: req.user.organization
     };
 
-    // Auto-assign to Agent2 if they are creating the lead
-    if (req.user.role === 'agent2') {
+    const organizationName = await getOrganizationNameById(req.user.organization);
+    const isGtiOrg = isGtiOrganizationName(organizationName);
+    const dispositionText = typeof req.body.disposition1 === 'string' ? req.body.disposition1.trim() : '';
+    const hasDisposition = dispositionText.length > 0;
+    const shouldDisposeLead = Boolean(isGtiOrg && hasDisposition);
+
+    if ((req.body.isDisposed || shouldDisposeLead) && !hasDisposition) {
+      return res.status(400).json({
+        success: false,
+        message: 'Disposition reason is required when disposing a lead'
+      });
+    }
+
+    if (isGtiOrg) {
+      if (shouldDisposeLead) {
+        leadData.disposition1 = dispositionText;
+      } else {
+        delete leadData.disposition1;
+      }
+
+      if (req.body.draftDate) {
+        const parsedDraftDate = parseDraftDateInput(req.body.draftDate);
+        if (!parsedDraftDate) {
+          return res.status(400).json({
+            success: false,
+            message: 'Draft date must be dd/mm/yyyy or a valid ISO date'
+          });
+        }
+        leadData.draftDate = parsedDraftDate;
+      } else {
+        delete leadData.draftDate;
+      }
+
+      if (shouldDisposeLead) {
+        leadData.isDisposed = true;
+        leadData.disposedBy = req.user._id;
+        leadData.status = 'Dead';
+        delete leadData.assignedTo;
+        delete leadData.assignedBy;
+        delete leadData.assignedAt;
+      } else {
+        leadData.isDisposed = false;
+        delete leadData.disposedBy;
+      }
+    } else {
+      delete leadData.disposition1;
+      delete leadData.draftDate;
+      leadData.isDisposed = false;
+      delete leadData.disposedBy;
+    }
+
+    // Auto-assign to Agent2 if they are creating the lead and it is not immediately disposed
+    if (req.user.role === 'agent2' && !leadData.isDisposed) {
       leadData.assignedTo = req.user._id;
       leadData.assignedBy = req.user._id;
       leadData.assignedAt = new Date();
@@ -1299,6 +1481,9 @@ router.post('/', protect, createLeadValidation, handleValidationErrors, async (r
     await lead.populate('createdBy', 'name email');
     if (lead.assignedTo) {
       await lead.populate('assignedTo', 'name email');
+    }
+    if (lead.disposedBy) {
+      await lead.populate('disposedBy', 'name email role');
     }
     if (lead.duplicateOf) {
       await lead.populate('duplicateOf', 'leadId name email phone');
@@ -1344,6 +1529,10 @@ router.post('/', protect, createLeadValidation, handleValidationErrors, async (r
       message: successMessage,
       data: { 
         lead,
+        status: lead.status,
+        isDisposed: lead.isDisposed,
+        disposition1: lead.disposition1 || null,
+        disposedBy: lead.disposedBy || null,
         isDuplicate: lead.isDuplicate,
         duplicateInfo: lead.isDuplicate ? {
           duplicateOf: lead.duplicateOf,
@@ -1457,7 +1646,7 @@ router.put('/:id', protect, updateLeadValidation, handleValidationErrors, async 
           // Status fields
           'status', 'leadStatus', 'contactStatus', 'qualificationOutcome', 
           'callDisposition', 'engagementOutcome', 'disqualification',
-          'followUpDate', 'followUpTime', 'followUpNotes', 'conversionValue',
+          'followUpDate', 'followUpTime', 'followUpNotes', 'conversionValue', 'requestedLoanAmount',
           'leadProgressStatus', 'agent2LastAction', 'lastUpdatedBy', 'lastUpdatedAt',
           'qualificationStatus', 'assignmentNotes'
         ];
@@ -1466,7 +1655,7 @@ router.put('/:id', protect, updateLeadValidation, handleValidationErrors, async 
         allowedFields = [
           'status', 'leadStatus', 'contactStatus', 'qualificationOutcome', 
           'callDisposition', 'engagementOutcome', 'disqualification',
-          'followUpDate', 'followUpTime', 'followUpNotes', 'conversionValue',
+          'followUpDate', 'followUpTime', 'followUpNotes', 'conversionValue', 'requestedLoanAmount',
           'leadProgressStatus', 'agent2LastAction', 'lastUpdatedBy', 'lastUpdatedAt',
           'qualificationStatus'
         ];
@@ -1481,7 +1670,7 @@ router.put('/:id', protect, updateLeadValidation, handleValidationErrors, async 
         // Status fields
         'status', 'leadStatus', 'contactStatus', 'qualificationOutcome', 
         'callDisposition', 'engagementOutcome', 'disqualification',
-        'followUpDate', 'followUpTime', 'followUpNotes', 'conversionValue',
+        'followUpDate', 'followUpTime', 'followUpNotes', 'conversionValue', 'requestedLoanAmount',
         'leadProgressStatus', 'agent2LastAction', 'lastUpdatedBy', 'lastUpdatedAt',
         'qualificationStatus', 'assignmentNotes'
       ];
@@ -1497,6 +1686,85 @@ router.put('/:id', protect, updateLeadValidation, handleValidationErrors, async 
         lead[field] = req.body[field];
       }
     });
+
+    const organizationId = lead.organization || (lead.createdBy && lead.createdBy.organization);
+    const organizationName = await getOrganizationNameById(organizationId);
+    const isGtiOrg = isGtiOrganizationName(organizationName);
+    const hasDispositionField = Object.prototype.hasOwnProperty.call(req.body, 'disposition1');
+    const hasIsDisposedField = Object.prototype.hasOwnProperty.call(req.body, 'isDisposed');
+    const hasDraftDateField = Object.prototype.hasOwnProperty.call(req.body, 'draftDate');
+    const canEditDraftDate = ['agent2', 'admin', 'superadmin'].includes(req.user.role);
+    let normalizedDispositionInput;
+
+    if (isGtiOrg && hasDispositionField) {
+      const rawDisposition = typeof req.body.disposition1 === 'string' ? req.body.disposition1.trim() : '';
+      normalizedDispositionInput = rawDisposition;
+
+      if (rawDisposition) {
+        lead.disposition1 = rawDisposition;
+      } else {
+        if (lead.isDisposed && !hasIsDisposedField) {
+          return res.status(400).json({
+            success: false,
+            message: 'Remove the dispose flag before clearing the disposition reason'
+          });
+        }
+        lead.disposition1 = undefined;
+      }
+    }
+
+    if (isGtiOrg && hasIsDisposedField) {
+      const shouldDispose = req.body.isDisposed === true;
+      const effectiveDisposition = typeof normalizedDispositionInput === 'string'
+        ? normalizedDispositionInput
+        : (typeof lead.disposition1 === 'string' ? lead.disposition1.trim() : '');
+
+      if (shouldDispose && !effectiveDisposition) {
+        return res.status(400).json({
+          success: false,
+          message: 'Disposition reason is required when disposing a lead'
+        });
+      }
+
+      if (shouldDispose) {
+        lead.isDisposed = true;
+        lead.disposedBy = req.user._id;
+        lead.status = 'Dead';
+        lead.assignedTo = undefined;
+        lead.assignedBy = undefined;
+        lead.assignedAt = undefined;
+      } else {
+        lead.isDisposed = false;
+        lead.disposedBy = undefined;
+      }
+    } else if (!isGtiOrg && (hasDispositionField || hasIsDisposedField)) {
+      console.log('Ignoring GTI-only disposition fields for non-GTI organization lead:', lead._id);
+    }
+
+    if (hasDraftDateField) {
+      if (!isGtiOrg) {
+        console.log('Ignoring draft date update for non-GTI organization lead:', lead._id);
+      } else if (!canEditDraftDate) {
+        return res.status(403).json({
+          success: false,
+          message: 'Only Agent2 or Admin users can update the draft date'
+        });
+      } else {
+        const incomingDraftDate = req.body.draftDate;
+        if (incomingDraftDate === null || incomingDraftDate === '' || incomingDraftDate === undefined) {
+          lead.draftDate = undefined;
+        } else {
+          const parsedDraftDate = parseDraftDateInput(incomingDraftDate);
+          if (!parsedDraftDate) {
+            return res.status(400).json({
+              success: false,
+              message: 'Draft date must be dd/mm/yyyy or a valid ISO date'
+            });
+          }
+          lead.draftDate = parsedDraftDate;
+        }
+      }
+    }
 
     // Set update tracking fields
     lead.lastUpdatedBy = req.user.name || req.user.email;
@@ -1642,6 +1910,14 @@ router.post('/:id/assign', protect, [
       return res.status(403).json({
         success: false,
         message: 'You can only assign leads you created'
+      });
+    }
+
+    const leadStatus = (lead.status || '').toLowerCase();
+    if (lead.isDisposed || leadStatus === 'dead') {
+      return res.status(400).json({
+        success: false,
+        message: 'Disposed leads cannot be assigned'
       });
     }
 
