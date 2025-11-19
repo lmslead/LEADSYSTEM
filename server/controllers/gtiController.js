@@ -29,10 +29,10 @@ const buildPhoneVariants = (rawNumber = '') => {
 
 const handleIncomingGtiCall = async (req, res) => {
   try {
-    const { primary_number: primaryNumber, uuid } = req.body || {};
+    const { primary_number: primaryNumber } = req.body || {};
 
-    if (!primaryNumber || !uuid) {
-      return res.status(400).json({ message: 'primary_number and uuid are required' });
+    if (!primaryNumber) {
+      return res.status(400).json({ message: 'primary_number is required' });
     }
 
     const phoneVariants = buildPhoneVariants(primaryNumber);
