@@ -96,6 +96,7 @@ const limiter = rateLimit({
   legacyHeaders: false, // Disable the `X-RateLimit-*` headers
   skipSuccessfulRequests: false,
   skipFailedRequests: false,
+  skip: (req) => req.path && req.path.startsWith('/gti'), // GTI inbound has its own limiter
 });
 app.use('/api/', limiter);
 
