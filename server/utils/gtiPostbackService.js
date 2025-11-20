@@ -286,32 +286,26 @@ const toIsoString = (value) => {
   return date.toISOString();
 };
 
-const buildDisposePayload = (lead, callUuid, primaryPhone) => ({
+const buildDisposePayload = (lead, callUuid) => ({
   call_uuid: callUuid,
   full_name: lead.name || '',
-  primary_phone: primaryPhone,
-  credit_score: lead.creditScore ?? null,
-  total_debt_amount: lead.totalDebtAmount ?? null,
-  lead_created_on: toIsoString(lead.createdAt) || new Date().toISOString(),
-  disposition: lead.disposition1 || null,
+  redd_credit_score: lead.creditScore ?? null,
+  redd_debt_amount: lead.totalDebtAmount ?? null,
+  redd_disposition: lead.disposition1 || null,
+  redd_lead_progress_status: null,
+  requested_loan_amount: null,
   event_type: 'dispose',
   event_timestamp: new Date().toISOString(),
 });
 
-const buildProgressPayload = (lead, callUuid, primaryPhone) => {
+const buildProgressPayload = (lead, callUuid) => {
   const payload = {
     call_uuid: callUuid,
     full_name: lead.name || '',
-    primary_phone: primaryPhone,
-    credit_score: lead.creditScore ?? null,
-    total_debt_amount: lead.totalDebtAmount ?? null,
-    lead_created_on: toIsoString(lead.createdAt) || new Date().toISOString(),
-    disposition: null,
-    lead_progress_status: lead.leadProgressStatus || null,
-    draft_date: toIsoString(lead.draftDate),
-    callback_date: toIsoString(lead.followUpDate),
-    callback_time: lead.followUpTime || null,
-    conversion_value: lead.conversionValue ?? null,
+    redd_credit_score: lead.creditScore ?? null,
+    redd_debt_amount: lead.totalDebtAmount ?? null,
+    redd_disposition: null,
+    redd_lead_progress_status: lead.leadProgressStatus || null,
     requested_loan_amount: lead.requestedLoanAmount ?? null,
     event_type: 'progress',
     event_timestamp: new Date().toISOString(),
@@ -322,27 +316,25 @@ const buildProgressPayload = (lead, callUuid, primaryPhone) => {
 };
 
 const applyProgressRules = (payload) => {
-  const status = (payload.lead_progress_status || '').toString().trim().toUpperCase();
+  const status = (payload.redd_lead_progress_status || '').toString().trim().toUpperCase();
+
+  if (!status) {
+    payload.requested_loan_amount = null;
+    return;
+  }
 
   if (status === 'CALLBACK' || status === 'CALLBACK NEEDED') {
-    payload.conversion_value = null;
     payload.requested_loan_amount = null;
     return;
   }
 
   if (status === 'SALE' || status === 'IMMEDIATE ENROLLMENT' || status === 'SALE LONG PLAY') {
-    payload.callback_date = null;
-    payload.callback_time = null;
-    payload.callback_notes = null;
     payload.requested_loan_amount = null;
     return;
   }
 
-  if (status === 'REQUEST FOR LOAN' || status === 'RFL') {
-    payload.conversion_value = null;
-    payload.callback_date = null;
-    payload.callback_time = null;
-    payload.callback_notes = null;
+  if (!(status === 'REQUEST FOR LOAN' || status === 'RFL')) {
+    payload.requested_loan_amount = null;
   }
 };
 
@@ -436,8 +428,8 @@ const sendGTIPostback = async ({ lead, eventType, trigger = '', inboundCall = nu
     : { ...sourceLead };
 
   const payload = eventTypeUpper === 'dispose'
-    ? buildDisposePayload(leadSnapshot, inbound.callUuid, normalizedPhone)
-    : buildProgressPayload(leadSnapshot, inbound.callUuid, normalizedPhone);
+    ? buildDisposePayload(leadSnapshot, inbound.callUuid)
+    : buildProgressPayload(leadSnapshot, inbound.callUuid);
 
   const job = {
     leadId: leadSnapshot._id,
