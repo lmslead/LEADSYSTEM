@@ -61,6 +61,49 @@ const leadSchema = new mongoose.Schema({
       message: 'Alternate phone number must be 10 digits with optional +1 prefix (e.g., +12345678901 or 2345678901)'
     }
   },
+
+  // GTI integration metadata
+  gtiCallUuid: {
+    type: String,
+    index: true,
+  },
+  gtiPrimaryPhone: {
+    type: String,
+    index: true,
+  },
+  gtiLastPostback: {
+    type: Date,
+  },
+  gtiPostbackHistory: [{
+    eventType: {
+      type: String,
+      enum: ['dispose', 'progress'],
+    },
+    payload: {
+      type: mongoose.Schema.Types.Mixed,
+    },
+    responseStatus: {
+      type: Number,
+    },
+    responseBody: {
+      type: mongoose.Schema.Types.Mixed,
+    },
+    sentAt: {
+      type: Date,
+      default: Date.now,
+    },
+    success: {
+      type: Boolean,
+      default: false,
+    },
+    attempt: {
+      type: Number,
+      default: 1,
+    },
+    errorMessage: {
+      type: String,
+    }
+  }],
   
   // Debt Information
   debtCategory: {
@@ -336,6 +379,9 @@ leadSchema.index({ isDuplicate: 1 });
 leadSchema.index({ duplicateOf: 1 });
 leadSchema.index({ isDisposed: 1 });
 leadSchema.index({ draftDate: 1 });
+leadSchema.index({ gtiCallUuid: 1 });
+leadSchema.index({ gtiPrimaryPhone: 1 });
+leadSchema.index({ gtiLastPostback: -1 });
 
 // PERFORMANCE OPTIMIZATION: Compound indexes for frequently used query combinations
 leadSchema.index({ organization: 1, status: 1 });

@@ -13,6 +13,7 @@ const {
   getEasternStartOfDay,
   getEasternEndOfDay 
 } = require('../utils/timeFilters');
+const { sendGTIPostback, syncLeadWithInboundCall } = require('../utils/gtiPostbackService');
 
 const EASTERN_TIMEZONE = 'America/New_York';
 
@@ -1470,6 +1471,18 @@ router.post('/', protect, createLeadValidation, handleValidationErrors, async (r
     
     console.log('Lead created successfully:', lead._id);
     console.log('Saved lead data:', JSON.stringify(lead, null, 2));
+
+    if (isGtiOrg) {
+      await syncLeadWithInboundCall(lead);
+
+      if (shouldDisposeLead && req.user.role === 'agent1' && !lead.isDuplicate) {
+        await sendGTIPostback({
+          lead,
+          eventType: 'dispose',
+          trigger: 'lead-create-agent1-dispose',
+        });
+      }
+    }
     
     // Set duplicate detection user if it's a duplicate
     if (lead.isDuplicate) {
@@ -1621,6 +1634,10 @@ router.put('/:id', protect, updateLeadValidation, handleValidationErrors, async 
         message: `User role ${req.user.role} is not authorized to update leads`
       });
     }
+
+    const wasDisposed = Boolean(lead.isDisposed);
+    const previousProgressStatus = lead.leadProgressStatus || null;
+    const progressStatusProvided = Object.prototype.hasOwnProperty.call(req.body, 'leadProgressStatus');
 
     // Define which fields each role can update
     let allowedFields = [];
@@ -1780,6 +1797,34 @@ router.put('/:id', protect, updateLeadValidation, handleValidationErrors, async 
     await lead.save();
 
     console.log('Lead saved successfully');
+
+    const isNowDisposed = Boolean(lead.isDisposed);
+    const currentProgressStatus = lead.leadProgressStatus || null;
+
+    if (isGtiOrg && req.user.role === 'agent1' && !wasDisposed && isNowDisposed && lead.disposition1) {
+      await sendGTIPostback({
+        lead,
+        eventType: 'dispose',
+        trigger: 'lead-update-agent1-dispose',
+      });
+    }
+
+    const shouldSendProgressPostback = Boolean(
+      isGtiOrg &&
+      currentProgressStatus &&
+      (
+        previousProgressStatus !== currentProgressStatus ||
+        (progressStatusProvided && previousProgressStatus === currentProgressStatus)
+      )
+    );
+
+    if (shouldSendProgressPostback) {
+      await sendGTIPostback({
+        lead,
+        eventType: 'progress',
+        trigger: 'lead-update-progress',
+      });
+    }
 
     // Populate the updated lead
     await lead.populate(['createdBy updatedBy', 'name email']);
@@ -2563,6 +2608,10 @@ router.put('/:id/progress-status', protect, [
       });
     }
 
+    const organizationName = await getOrganizationNameById(lead.organization);
+    const isGtiOrg = isGtiOrganizationName(organizationName);
+    const previousProgressStatus = lead.leadProgressStatus || null;
+
     // Check if lead is assigned to this Agent2
     if (!lead.assignedTo || lead.assignedTo.toString() !== req.user._id.toString()) {
       return res.status(403).json({
@@ -2578,6 +2627,14 @@ router.put('/:id/progress-status', protect, [
     lead.updatedBy = req.user._id;
 
     await lead.save();
+
+    if (isGtiOrg && lead.leadProgressStatus) {
+      await sendGTIPostback({
+        lead,
+        eventType: 'progress',
+        trigger: 'lead-progress-status-agent2',
+      });
+    }
 
     // Populate the updated lead
     await lead.populate(['createdBy updatedBy assignedTo assignedBy', 'name email']);

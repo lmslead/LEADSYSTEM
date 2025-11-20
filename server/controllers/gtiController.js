@@ -1,59 +1,40 @@
 const Lead = require('../models/Lead');
-
-const normalizePhoneNumber = (value = '') => {
-  if (!value) return '';
-  return value.toString().replace(/\D/g, '');
-};
-
-const buildPhoneVariants = (rawNumber = '') => {
-  const variants = new Set();
-  const trimmed = (rawNumber || '').trim();
-  if (trimmed) {
-    variants.add(trimmed);
-  }
-
-  const digits = normalizePhoneNumber(trimmed);
-  if (digits) {
-    variants.add(digits);
-    if (digits.length === 10) {
-      variants.add(`+1${digits}`);
-      variants.add(`1${digits}`);
-    }
-    if (digits.length === 11 && digits.startsWith('1')) {
-      variants.add(`+${digits}`);
-    }
-  }
-
-  return Array.from(variants);
-};
+const GTIInboundCall = require('../models/GTIInboundCall');
+const { normalizeToE164, buildPhoneVariants } = require('../utils/gtiPhoneUtils');
 
 const handleIncomingGtiCall = async (req, res) => {
   try {
-    const { primary_number: primaryNumber } = req.body || {};
+    const { primary_number: primaryNumber, call_uuid: callUuid } = req.body || {};
 
     if (!primaryNumber) {
       return res.status(400).json({ message: 'primary_number is required' });
     }
 
-    const phoneVariants = buildPhoneVariants(primaryNumber);
-    if (phoneVariants.length === 0) {
+    if (!callUuid) {
+      return res.status(400).json({ message: 'call_uuid is required' });
+    }
+
+    const normalizedPhone = normalizeToE164(primaryNumber);
+    if (!normalizedPhone) {
       return res.status(400).json({ message: 'primary_number is invalid' });
     }
 
-    const duplicateLead = await Lead.findOne({
-      $or: [
-        { phone: { $in: phoneVariants } },
-        { alternatePhone: { $in: phoneVariants } }
-      ]
-    })
-      .select('_id leadId phone alternatePhone')
-      .lean();
+    await GTIInboundCall.touchArrival(normalizedPhone, callUuid);
 
-    if (duplicateLead) {
-      return res.status(200).json({ status: 'duplicate' });
-    }
+    const variantSet = new Set([
+      ...buildPhoneVariants(primaryNumber),
+      ...buildPhoneVariants(normalizedPhone),
+      normalizedPhone
+    ]);
+    const variantList = Array.from(variantSet).filter(Boolean);
 
-    return res.status(200).json({ status: 'new lead' });
+    const leadCount = await Lead.countDocuments({
+      phone: { $in: variantList }
+    });
+
+    const status = leadCount === 0 ? 'new lead' : 'duplicate';
+
+    return res.status(200).json({ status });
   } catch (error) {
     console.error('GTI incoming webhook error:', error);
     return res.status(500).json({ message: 'Internal server error' });
