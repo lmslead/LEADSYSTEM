@@ -1,5 +1,5 @@
 const https = require('https');
-const { URL } = require('url');
+const { URL, URLSearchParams } = require('url');
 
 const Lead = require('../models/Lead');
 const GTIInboundCall = require('../models/GTIInboundCall');
@@ -61,14 +61,12 @@ const executeJob = async (job) => {
     return;
   }
 
-  const formattedBase = baseUrl.endsWith('/') ? baseUrl.slice(0, -1) : baseUrl;
-  const targetUrl = `${formattedBase}/${encodeURIComponent(job.callUuid)}`;
+  const targetUrl = buildTargetUrl(baseUrl, job.callUuid, job.payload);
 
   try {
-    const response = await postJson(targetUrl, {
-      'Content-Type': 'application/json',
+    const response = await sendRequestWithQuery(targetUrl, {
       Authorization: authHeader,
-    }, job.payload, REQUEST_TIMEOUT_MS);
+    }, REQUEST_TIMEOUT_MS);
 
     const success = response.statusCode >= 200 && response.statusCode < 300;
     const parsedBody = parseResponseBody(response.body);
@@ -115,7 +113,35 @@ const executeJob = async (job) => {
   }
 };
 
-const postJson = (urlString, headers, body, timeoutMs) => {
+const buildTargetUrl = (baseUrl, callUuid, payload) => {
+  const sanitizedBase = (baseUrl || '').trim();
+  if (!sanitizedBase) {
+    throw new Error('GTI_POSTBACK_URL is empty');
+  }
+
+  let urlWithoutParams = sanitizedBase;
+  if (urlWithoutParams.includes('[call_uuid]')) {
+    urlWithoutParams = urlWithoutParams.replace('[call_uuid]', encodeURIComponent(callUuid));
+  } else {
+    const trimmed = urlWithoutParams.endsWith('/')
+      ? urlWithoutParams.slice(0, -1)
+      : urlWithoutParams;
+    urlWithoutParams = `${trimmed}/${encodeURIComponent(callUuid)}`;
+  }
+
+  const params = new URLSearchParams();
+  Object.entries(payload || {}).forEach(([key, value]) => {
+    if (value === null || value === undefined || value === '') {
+      return;
+    }
+    params.append(key, value);
+  });
+
+  const queryString = params.toString();
+  return queryString ? `${urlWithoutParams}?${queryString}` : urlWithoutParams;
+};
+
+const sendRequestWithQuery = (urlString, headers, timeoutMs) => {
   return new Promise((resolve, reject) => {
     let parsedUrl;
     try {
@@ -126,7 +152,7 @@ const postJson = (urlString, headers, body, timeoutMs) => {
     }
 
     const options = {
-      method: 'POST',
+      method: 'GET',
       headers,
       timeout: timeoutMs,
     };
@@ -152,13 +178,6 @@ const postJson = (urlString, headers, body, timeoutMs) => {
     request.on('timeout', () => {
       request.destroy(new Error('GTI postback request timed out'));
     });
-
-    try {
-      request.write(JSON.stringify(body));
-    } catch (error) {
-      request.destroy(error);
-      return;
-    }
 
     request.end();
   });
