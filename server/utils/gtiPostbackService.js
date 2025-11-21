@@ -305,8 +305,7 @@ const toIsoString = (value) => {
   return date.toISOString();
 };
 
-const buildDisposePayload = (lead, callUuid) => ({
-  call_uuid: callUuid,
+const buildDisposePayload = (lead) => ({
   full_name: lead.name || '',
   redd_credit_score: lead.creditScore ?? null,
   redd_debt_amount: lead.totalDebtAmount ?? null,
@@ -317,9 +316,8 @@ const buildDisposePayload = (lead, callUuid) => ({
   event_timestamp: new Date().toISOString(),
 });
 
-const buildProgressPayload = (lead, callUuid) => {
+const buildProgressPayload = (lead) => {
   const payload = {
-    call_uuid: callUuid,
     full_name: lead.name || '',
     redd_credit_score: lead.creditScore ?? null,
     redd_debt_amount: lead.totalDebtAmount ?? null,
@@ -447,8 +445,8 @@ const sendGTIPostback = async ({ lead, eventType, trigger = '', inboundCall = nu
     : { ...sourceLead };
 
   const payload = eventTypeUpper === 'dispose'
-    ? buildDisposePayload(leadSnapshot, inbound.callUuid)
-    : buildProgressPayload(leadSnapshot, inbound.callUuid);
+    ? buildDisposePayload(leadSnapshot)
+    : buildProgressPayload(leadSnapshot);
 
   const job = {
     leadId: leadSnapshot._id,
