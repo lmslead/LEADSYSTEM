@@ -22,6 +22,7 @@ const app = express();
 
 // Trust proxy - IMPORTANT: Set to 1 for single proxy (Nginx)
 app.set('trust proxy', 1);
+app.enable('trust proxy');
 
 const server = http.createServer(app);
 const dev = process.env.NODE_ENV !== 'production';
