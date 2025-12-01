@@ -21,7 +21,7 @@ const gtiIncomingRoutes = require('./routes/gtiIncoming');
 const app = express();
 
 // Trust proxy - IMPORTANT: Set to 1 for single proxy (Nginx)
-app.set('trust proxy', 'loopback');
+app.set('trust proxy', 'loopback, linklocal, uniquelocal');
 
 const server = http.createServer(app);
 const dev = process.env.NODE_ENV !== 'production';
