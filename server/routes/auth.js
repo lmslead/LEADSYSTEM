@@ -456,6 +456,11 @@ router.get('/agents', protect, async (req, res) => {
       ];
     }
 
+    // Filter by status (active/inactive)
+    if (req.query.status) {
+      query.isActive = req.query.status === 'active';
+    }
+
     const agents = await User.find(query)
       .populate('organization', 'name')
       .populate('createdBy', 'name email')
@@ -762,6 +767,11 @@ router.get('/admins', protect, async (req, res) => {
         { name: { $regex: req.query.search, $options: 'i' } },
         { email: { $regex: req.query.search, $options: 'i' } }
       ];
+    }
+
+    // Filter by status (active/inactive)
+    if (req.query.status) {
+      query.isActive = req.query.status === 'active';
     }
 
     const admins = await User.find(query)

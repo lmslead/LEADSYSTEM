@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useRefresh } from '../contexts/RefreshContext';
 import { scrollToTop } from '../utils/scrollUtils';
@@ -66,13 +66,27 @@ const SuperAdminDashboard = () => {
   // Admin and Agent filters
   const [adminFilters, setAdminFilters] = useState({
     search: '',
-    organization: ''
+    organization: '',
+    status: ''
   });
 
   const [agentFilters, setAgentFilters] = useState({
     search: '',
-    organization: ''
+    organization: '',
+    status: ''
   });
+
+  // Keep latest filters handy without recreating callbacks
+  const adminFiltersRef = useRef(adminFilters);
+  const agentFiltersRef = useRef(agentFilters);
+
+  useEffect(() => {
+    adminFiltersRef.current = adminFilters;
+  }, [adminFilters]);
+
+  useEffect(() => {
+    agentFiltersRef.current = agentFilters;
+  }, [agentFilters]);
 
   // Lead form data for create/edit
   const [leadFormData, setLeadFormData] = useState({
@@ -95,11 +109,12 @@ const SuperAdminDashboard = () => {
     requirements: ''
   });
 
-  const fetchAdmins = useCallback(async () => {
+  const fetchAdmins = useCallback(async (filters = adminFiltersRef.current) => {
     try {
       const params = new URLSearchParams();
-      if (adminFilters.search) params.append('search', adminFilters.search);
-      if (adminFilters.organization) params.append('organization', adminFilters.organization);
+      if (filters.search) params.append('search', filters.search);
+      if (filters.organization) params.append('organization', filters.organization);
+      if (filters.status) params.append('status', filters.status);
 
       const response = await axios.get(`/api/auth/admins?${params.toString()}`);
       const adminsData = Array.isArray(response.data?.data) ? response.data.data : [];
@@ -109,13 +124,14 @@ const SuperAdminDashboard = () => {
       toast.error('Failed to load admins');
       setAdmins([]);
     }
-  }, [adminFilters.search, adminFilters.organization]);
+  }, []);
 
-  const fetchAgents = useCallback(async () => {
+  const fetchAgents = useCallback(async (filters = agentFiltersRef.current) => {
     try {
       const params = new URLSearchParams();
-      if (agentFilters.search) params.append('search', agentFilters.search);
-      if (agentFilters.organization) params.append('organization', agentFilters.organization);
+      if (filters.search) params.append('search', filters.search);
+      if (filters.organization) params.append('organization', filters.organization);
+      if (filters.status) params.append('status', filters.status);
 
       const response = await axios.get(`/api/auth/agents?${params.toString()}`);
       const agentsData = Array.isArray(response.data?.data) ? response.data.data : [];
@@ -125,7 +141,7 @@ const SuperAdminDashboard = () => {
       toast.error('Failed to load agents');
       setAgents([]);
     }
-  }, [agentFilters.search, agentFilters.organization]);
+  }, []);
 
   const fetchData = useCallback(async () => {
     try {
@@ -245,16 +261,16 @@ const SuperAdminDashboard = () => {
   // Refetch admins when admin filters change
   useEffect(() => {
     if (activeTab === 'overview') {
-      fetchAdmins();
+      fetchAdmins(adminFilters);
     }
-  }, [adminFilters.search, adminFilters.organization, activeTab, fetchAdmins]);
+  }, [adminFilters.search, adminFilters.organization, adminFilters.status, activeTab, fetchAdmins]);
 
   // Refetch agents when agent filters change
   useEffect(() => {
     if (activeTab === 'overview') {
-      fetchAgents();
+      fetchAgents(agentFilters);
     }
-  }, [agentFilters.search, agentFilters.organization, activeTab, fetchAgents]);
+  }, [agentFilters.search, agentFilters.organization, agentFilters.status, activeTab, fetchAgents]);
 
   const handleDeleteAdmin = async (adminId, adminName) => {
     if (window.confirm(`Are you sure you want to delete admin "${adminName}"? This action cannot be undone.`)) {
@@ -732,7 +748,7 @@ const SuperAdminDashboard = () => {
               </div>
               
               {/* Admin Filters */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
                   <input
@@ -756,6 +772,18 @@ const SuperAdminDashboard = () => {
                     ))}
                   </select>
                 </div>
+
+                <div>
+                  <select
+                    value={adminFilters.status}
+                    onChange={(e) => setAdminFilters(prev => ({ ...prev, status: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">All Status</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </div>
               </div>
             </div>
             
@@ -763,6 +791,9 @@ const SuperAdminDashboard = () => {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16">
+                      S.No
+                    </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Admin Info
                     </th>
@@ -778,8 +809,11 @@ const SuperAdminDashboard = () => {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {Array.isArray(admins) && admins.map((admin) => (
+                  {Array.isArray(admins) && admins.map((admin, index) => (
                     <tr key={admin._id} className="hover:bg-gray-50">
+                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 font-medium">
+                        {index + 1}
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div>
                           <div className="text-sm font-medium text-gray-900">{admin.name}</div>
@@ -832,7 +866,7 @@ const SuperAdminDashboard = () => {
                   ))}
                   {(!Array.isArray(admins) || admins.length === 0) && (
                     <tr>
-                      <td colSpan="4" className="px-6 py-8 text-center text-gray-500">
+                      <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
                         No administrators found.
                       </td>
                     </tr>
@@ -850,7 +884,7 @@ const SuperAdminDashboard = () => {
               </div>
               
               {/* Agent Filters */}
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+              <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
                 <div className="relative">
                   <Search className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400 h-4 w-4" />
                   <input
@@ -874,6 +908,18 @@ const SuperAdminDashboard = () => {
                     ))}
                   </select>
                 </div>
+
+                <div>
+                  <select
+                    value={agentFilters.status}
+                    onChange={(e) => setAgentFilters(prev => ({ ...prev, status: e.target.value }))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-md focus:outline-none focus:ring-2 focus:ring-blue-500"
+                  >
+                    <option value="">All Status</option>
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                  </select>
+                </div>
               </div>
             </div>
             
@@ -881,6 +927,9 @@ const SuperAdminDashboard = () => {
               <table className="min-w-full divide-y divide-gray-200">
                 <thead className="bg-gray-50">
                   <tr>
+                    <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider w-16">
+                      S.No
+                    </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Agent Info
                     </th>
@@ -899,8 +948,11 @@ const SuperAdminDashboard = () => {
                   </tr>
                 </thead>
                 <tbody className="bg-white divide-y divide-gray-200">
-                  {Array.isArray(agents) && agents.map((agent) => (
+                  {Array.isArray(agents) && agents.map((agent, index) => (
                     <tr key={agent._id} className="hover:bg-gray-50">
+                      <td className="px-4 py-4 whitespace-nowrap text-sm text-gray-500 font-medium">
+                        {index + 1}
+                      </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <div>
                           <div className="text-sm font-medium text-gray-900">{agent.name}</div>
@@ -960,7 +1012,7 @@ const SuperAdminDashboard = () => {
                   ))}
                   {(!Array.isArray(agents) || agents.length === 0) && (
                     <tr>
-                      <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
+                      <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
                         No agents found.
                       </td>
                     </tr>
