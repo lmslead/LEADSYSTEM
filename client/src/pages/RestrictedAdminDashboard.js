@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import {
   Download,
   Calendar,
@@ -97,6 +97,8 @@ const RestrictedAdminDashboard = () => {
   const [activePreset, setActivePreset] = useState('all');
   const [customStart, setCustomStart] = useState('');
   const [customEnd, setCustomEnd] = useState('');
+  const customStartRef = useRef('');
+  const customEndRef = useRef('');
 
   // Search (client-side across all visible records)
   const [searchTerm, setSearchTerm] = useState('');
@@ -126,9 +128,9 @@ const RestrictedAdminDashboard = () => {
         dateFilter: activePreset
       };
 
-      if (activePreset === 'custom' && isValidDDMMYYYY(customStart) && isValidDDMMYYYY(customEnd)) {
-        params.startDate = customStart;
-        params.endDate = customEnd;
+      if (activePreset === 'custom' && isValidDDMMYYYY(customStartRef.current) && isValidDDMMYYYY(customEndRef.current)) {
+        params.startDate = customStartRef.current;
+        params.endDate = customEndRef.current;
       }
 
       // SuperAdmin can filter by restricted admin
@@ -148,7 +150,7 @@ const RestrictedAdminDashboard = () => {
       setLoading(false);
       setRefreshing(false);
     }
-  }, [activePreset, customStart, customEnd, pagination.limit, user, selectedAdmin]);
+  }, [activePreset, pagination.limit, user, selectedAdmin]);
 
   // Initial load + filter change
   useEffect(() => {
@@ -213,7 +215,21 @@ const RestrictedAdminDashboard = () => {
     if (key !== 'custom') {
       setCustomStart('');
       setCustomEnd('');
+      customStartRef.current = '';
+      customEndRef.current = '';
     }
+  };
+
+  // ── Update refs when custom dates change ───────────────────────
+  const handleCustomStartChange = (val) => {
+    const formatted = autoFormatDate(val);
+    setCustomStart(formatted);
+    customStartRef.current = formatted;
+  };
+  const handleCustomEndChange = (val) => {
+    const formatted = autoFormatDate(val);
+    setCustomEnd(formatted);
+    customEndRef.current = formatted;
   };
 
   // ── Apply custom date ──────────────────────────────────────────
@@ -222,7 +238,12 @@ const RestrictedAdminDashboard = () => {
       toast.error('Please enter dates in dd-mm-yyyy format');
       return;
     }
-    setActivePreset('custom');
+    if (activePreset === 'custom') {
+      // Already on custom — force re-fetch with new dates
+      fetchData(1);
+    } else {
+      setActivePreset('custom');
+    }
   };
 
   if (loading) return <LoadingSpinner message="Loading dashboard..." />;
@@ -292,7 +313,7 @@ const RestrictedAdminDashboard = () => {
               type="text"
               placeholder="dd-mm-yyyy"
               value={customStart}
-              onChange={e => setCustomStart(autoFormatDate(e.target.value))}
+              onChange={e => handleCustomStartChange(e.target.value)}
               maxLength={10}
               className={`w-28 px-2 py-1.5 text-xs border-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
                 activePreset === 'custom' ? 'border-blue-400' : 'border-gray-200'
@@ -303,7 +324,7 @@ const RestrictedAdminDashboard = () => {
               type="text"
               placeholder="dd-mm-yyyy"
               value={customEnd}
-              onChange={e => setCustomEnd(autoFormatDate(e.target.value))}
+              onChange={e => handleCustomEndChange(e.target.value)}
               maxLength={10}
               className={`w-28 px-2 py-1.5 text-xs border-2 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent transition-all ${
                 activePreset === 'custom' ? 'border-blue-400' : 'border-gray-200'
