@@ -49,8 +49,8 @@ const AdminUploadShareModal = ({ isOpen, onClose }) => {
       return;
     }
 
-    if (f.size > 50 * 1024 * 1024) {
-      toast.error('File too large (max 50 MB)');
+    if (f.size > 20 * 1024 * 1024) {
+      toast.error('File too large (max 20 MB)');
       e.target.value = '';
       return;
     }
