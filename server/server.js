@@ -21,6 +21,7 @@ const authRoutes = require('./routes/auth');
 const leadRoutes = require('./routes/leads');
 const organizationRoutes = require('./routes/organizations');
 const gtiIncomingRoutes = require('./routes/gtiIncoming');
+const adminUploadRoutes = require('./routes/adminUploads');
 
 const app = express();
 const server = http.createServer(app);
@@ -148,6 +149,7 @@ app.use('/api/auth', authRoutes);
 app.use('/api/leads', leadRoutes);
 app.use('/api/organizations', organizationRoutes);
 app.use('/api/gti', gtiIncomingRoutes);
+app.use('/api/admin-uploads', adminUploadRoutes);
 
 // =========================
 // HEALTH CHECK

@@ -21,6 +21,7 @@ import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/LoadingSpinner';
 import AgentManagement from '../components/AgentManagement';
 import LeadReassignModal from '../components/LeadReassignModal';
+import AdminUploadShareModal from '../components/AdminUploadShareModal';
 import Pagination from '../components/Pagination';
 import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -85,6 +86,9 @@ const AdminDashboard = () => {
   // Lead reassignment modal states
   const [showReassignModal, setShowReassignModal] = useState(false);
   const [leadToReassign, setLeadToReassign] = useState(null);
+
+  // Admin upload share modal
+  const [showShareModal, setShowShareModal] = useState(false);
   
   const maskEmail = (email) => {
     if (!email) return '—';
@@ -1442,9 +1446,16 @@ const AdminDashboard = () => {
               </div>
             </div>
             
-            {/* Export Button - Only for Reddington Admin */}
+            {/* Export & Share Buttons - Only for Reddington Admin */}
             {isReddingtonAdmin && (
-              <div className="ml-auto">
+              <div className="ml-auto flex items-center gap-2">
+                <button
+                  onClick={() => setShowShareModal(true)}
+                  className="px-4 py-1.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white text-xs font-semibold rounded-lg hover:shadow-xl hover:scale-105 transition-all duration-200 flex items-center gap-1.5"
+                >
+                  <Users size={14} />
+                  <span>Share Data</span>
+                </button>
                 <button
                   onClick={handleExportLeads}
                   className="px-4 py-1.5 bg-gradient-to-r from-emerald-600 to-emerald-600 text-white text-xs font-semibold rounded-lg hover:shadow-xl hover:scale-105 transition-all duration-200 flex items-center gap-1.5"
@@ -2341,6 +2352,12 @@ const AdminDashboard = () => {
 
       {/* Agent Management Section */}
       <AgentManagement />
+
+      {/* Admin Upload Share Modal */}
+      <AdminUploadShareModal
+        isOpen={showShareModal}
+        onClose={() => setShowShareModal(false)}
+      />
       </div>
     </div>
   );

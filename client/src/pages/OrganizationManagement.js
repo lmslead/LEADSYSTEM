@@ -709,6 +709,7 @@ const OrganizationManagement = () => {
                         <option value="admin">Admin</option>
                         <option value="agent1">Agent 1</option>
                         <option value="agent2">Agent 2</option>
+                        <option value="restricted_admin">Restricted Admin</option>
                       </select>
                     </div>
                   </div>

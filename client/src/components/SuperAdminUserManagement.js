@@ -61,7 +61,7 @@ const SuperAdminUserManagement = () => {
   const toggleUserStatus = async (userId, currentStatus) => {
     try {
       const targetUser = users.find(u => u._id === userId);
-      const endpoint = targetUser.role === 'admin' ? 'admins' : 'agents';
+      const endpoint = (targetUser.role === 'admin' || targetUser.role === 'restricted_admin') ? 'admins' : 'agents';
       
       const response = await axios.put(`/api/auth/${endpoint}/${userId}/status`, {
         isActive: !currentStatus
@@ -156,14 +156,14 @@ const SuperAdminUserManagement = () => {
 
   const deleteUser = async (userId, userName) => {
     const targetUser = users.find(u => u._id === userId);
-    const userType = targetUser.role === 'admin' ? 'admin' : 'agent';
+    const userType = (targetUser.role === 'admin' || targetUser.role === 'restricted_admin') ? 'admin' : 'agent';
     
     if (!window.confirm(`Are you sure you want to delete ${userType} "${userName}"? This action cannot be undone.`)) {
       return;
     }
 
     try {
-      const endpoint = targetUser.role === 'admin' ? 'admins' : 'agents';
+      const endpoint = (targetUser.role === 'admin' || targetUser.role === 'restricted_admin') ? 'admins' : 'agents';
       await axios.delete(`/api/auth/${endpoint}/${userId}`);
       
       setUsers(prev => prev.filter(user => user._id !== userId));
@@ -217,7 +217,7 @@ const SuperAdminUserManagement = () => {
       
       selectedUsers.forEach(userId => {
         const user = users.find(u => u._id === userId);
-        if (user.role === 'admin') {
+        if (user.role === 'admin' || user.role === 'restricted_admin') {
           adminIds.push(userId);
         } else {
           agentIds.push(userId);
@@ -253,6 +253,8 @@ const SuperAdminUserManagement = () => {
         return 'bg-green-100 text-green-800';
       case 'admin':
         return 'bg-purple-100 text-purple-800';
+      case 'restricted_admin':
+        return 'bg-orange-100 text-orange-800';
       default:
         return 'bg-gray-100 text-gray-800';
     }
@@ -266,6 +268,8 @@ const SuperAdminUserManagement = () => {
         return 'Follow-up & Qualification';
       case 'admin':
         return 'System Administration';
+      case 'restricted_admin':
+        return 'Restricted Data Access';
       default:
         return 'Unknown Role';
     }
@@ -358,6 +362,16 @@ const SuperAdminUserManagement = () => {
               }`}
             >
               Admins ({users.filter(u => u.role === 'admin').length})
+            </button>
+            <button
+              onClick={() => setRoleFilter('restricted_admin')}
+              className={`px-3 py-1 rounded-full text-sm font-medium transition-colors ${
+                roleFilter === 'restricted_admin'
+                  ? 'bg-orange-100 text-orange-700 border border-orange-300'
+                  : 'bg-gray-100 text-gray-600 hover:bg-gray-200'
+              }`}
+            >
+              Restricted Admin ({users.filter(u => u.role === 'restricted_admin').length})
             </button>
           </div>
         </div>

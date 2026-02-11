@@ -92,8 +92,8 @@ const userValidation = [
     .matches(/^(?=.*[a-z])(?=.*[A-Z])(?=.*\d)/)
     .withMessage('Password must contain at least one lowercase letter, one uppercase letter, and one number'),
   body('role')
-    .isIn(['admin', 'agent1', 'agent2'])
-    .withMessage('Role must be admin, agent1, or agent2')
+    .isIn(['admin', 'agent1', 'agent2', 'restricted_admin'])
+    .withMessage('Role must be admin, agent1, agent2, or restricted_admin')
 ];
 
 // @desc    Create organization (SuperAdmin only)

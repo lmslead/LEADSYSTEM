@@ -13,7 +13,8 @@ import {
   X,
   Bell,
   Settings,
-  Shield
+  Shield,
+  Database
 } from 'lucide-react';
 import LoadingSpinner from './LoadingSpinner';
 import toast from 'react-hot-toast';
@@ -91,6 +92,10 @@ const Layout = ({ onDashboardRefresh }) => {
       return [
         { name: 'Leads', href: '/leads', icon: Users }
       ];
+    } else if (user.role === 'restricted_admin') {
+      return [
+        { name: 'Dashboard', href: '/restricted-dashboard', icon: Database }
+      ];
     } else {
       return [
         { name: 'Dashboard', href: '/dashboard', icon: Home }
@@ -145,7 +150,8 @@ const Layout = ({ onDashboardRefresh }) => {
               <p className="text-xs text-gray-500 capitalize">
                 {user.role === 'agent1' ? 'Lead Generator' : 
                  user.role === 'agent2' ? 'Lead Follower' : 
-                 user.role === 'admin' ? 'Administrator' : 'Super Administrator'}
+                 user.role === 'admin' ? 'Administrator' : 
+                 user.role === 'restricted_admin' ? 'Restricted Admin' : 'Super Administrator'}
               </p>
             </div>
           </div>
@@ -211,7 +217,8 @@ const Layout = ({ onDashboardRefresh }) => {
               <div className="ml-4 md:ml-0">
                 <h2 className="text-xl font-semibold text-gray-900">
                   {user.role === 'admin' ? 'Admin Dashboard' :
-                   user.role === 'agent2' ? 'Leads Management' : 'Lead Generator'}
+                   user.role === 'agent2' ? 'Leads Management' :
+                   user.role === 'restricted_admin' ? 'Restricted Admin Dashboard' : 'Lead Generator'}
                 </h2>
               </div>
             </div>

@@ -21,6 +21,8 @@ const Login = () => {
         return '/super-admin-dashboard';
       case 'admin':
         return '/admin-dashboard';
+      case 'restricted_admin':
+        return '/restricted-dashboard';
       case 'agent1':
         return '/agent1-dashboard';
       case 'agent2':

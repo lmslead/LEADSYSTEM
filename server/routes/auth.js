@@ -754,7 +754,7 @@ router.get('/admins', protect, async (req, res) => {
       });
     }
 
-    let query = { role: 'admin' };
+    let query = { role: { $in: ['admin', 'restricted_admin'] } };
 
     // SuperAdmin can filter by organization
     if (req.query.organization) {
@@ -810,7 +810,7 @@ router.delete('/admins/:id', protect, async (req, res) => {
 
     const admin = await User.findById(req.params.id);
 
-    if (!admin || admin.role !== 'admin') {
+    if (!admin || !['admin', 'restricted_admin'].includes(admin.role)) {
       return res.status(404).json({
         success: false,
         message: 'Admin not found'
@@ -850,7 +850,7 @@ router.put('/admins/:id/status', protect, async (req, res) => {
     const { isActive } = req.body;
     const admin = await User.findById(req.params.id);
 
-    if (!admin || admin.role !== 'admin') {
+    if (!admin || !['admin', 'restricted_admin'].includes(admin.role)) {
       return res.status(404).json({
         success: false,
         message: 'Admin not found'

@@ -12,6 +12,7 @@ import Agent1Dashboard from './pages/Agent1Dashboard';
 import Agent2Dashboard from './pages/Agent2Dashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
+import RestrictedAdminDashboard from './pages/RestrictedAdminDashboard';
 import Profile from './pages/Profile';
 
 function App() {
@@ -88,6 +89,12 @@ function App() {
                 <Route path="profile" element={
                   <ProtectedRoute roles={['admin', 'superadmin']}>
                     <Profile />
+                  </ProtectedRoute>
+                } />
+
+                <Route path="restricted-dashboard" element={
+                  <ProtectedRoute roles={['restricted_admin', 'superadmin']}>
+                    <RestrictedAdminDashboard />
                   </ProtectedRoute>
                 } />
               </Route>

@@ -798,6 +798,9 @@ const SuperAdminDashboard = () => {
                       Admin Info
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
+                      Role
+                    </th>
+                    <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                       Status
                     </th>
                     <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
@@ -819,6 +822,13 @@ const SuperAdminDashboard = () => {
                           <div className="text-sm font-medium text-gray-900">{admin.name}</div>
                           <div className="text-sm text-gray-500">{admin.email}</div>
                         </div>
+                      </td>
+                      <td className="px-6 py-4 whitespace-nowrap">
+                        <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
+                          admin.role === 'restricted_admin' ? 'bg-orange-100 text-orange-800' : 'bg-purple-100 text-purple-800'
+                        }`}>
+                          {admin.role === 'restricted_admin' ? 'Restricted Admin' : 'Admin'}
+                        </span>
                       </td>
                       <td className="px-6 py-4 whitespace-nowrap">
                         <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${
@@ -866,7 +876,7 @@ const SuperAdminDashboard = () => {
                   ))}
                   {(!Array.isArray(admins) || admins.length === 0) && (
                     <tr>
-                      <td colSpan="5" className="px-6 py-8 text-center text-gray-500">
+                      <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
                         No administrators found.
                       </td>
                     </tr>
