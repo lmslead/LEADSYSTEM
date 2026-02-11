@@ -42,6 +42,7 @@ const HEADER_MAP = {
   'rank': 'rank',
   'owner': 'owner',
   'entry_id': 'entry_id',
+  'entry': 'entry_id',              // column sometimes named just "entry"
   'debt': 'debt',
   'ccount': 'ccount',
   'monthly_payment': 'monthly_payment',
@@ -60,6 +61,51 @@ const HEADER_MAP = {
 const VALID_FIELDS = new Set(Object.values(HEADER_MAP));
 
 // ── Helpers ──────────────────────────────────────────────────────
+
+// Date fields that need Excel-serial → DD-MM-YYYY HH:MM conversion
+const DATE_FIELDS = new Set(['entry_date', 'modify_date', 'last_local_call_time']);
+
+/**
+ * Convert a value that may be an Excel serial number, a Date object,
+ * or an already-formatted string into DD-MM-YYYY HH:MM (24-hr).
+ */
+function formatExcelDate(value) {
+  if (value == null || value === '') return '';
+
+  // Already a Date object (e.g. cellDates: true)
+  if (value instanceof Date) {
+    if (isNaN(value.getTime())) return '';
+    const dd = String(value.getUTCDate()).padStart(2, '0');
+    const mm = String(value.getUTCMonth() + 1).padStart(2, '0');
+    const yyyy = value.getUTCFullYear();
+    const hh = String(value.getUTCHours()).padStart(2, '0');
+    const min = String(value.getUTCMinutes()).padStart(2, '0');
+    return `${dd}-${mm}-${yyyy} ${hh}:${min}`;
+  }
+
+  const str = String(value).trim();
+
+  // Already in DD-MM-YYYY … format (CSV uploads)
+  if (/^\d{2}-\d{2}-\d{4}/.test(str)) return str;
+
+  // Excel serial number (e.g. 46063.6194 → 10-02-2026 14:51)
+  const num = Number(value);
+  if (!isNaN(num) && num > 25569) {           // 25569 = 01-01-1970
+    const totalDays = num - 25569;
+    const wholeDays = Math.floor(totalDays);
+    const fracMs    = Math.round((totalDays - wholeDays) * 86400000);
+    const date      = new Date(wholeDays * 86400000 + fracMs);
+
+    const dd   = String(date.getUTCDate()).padStart(2, '0');
+    const mm   = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const yyyy = date.getUTCFullYear();
+    const hh   = String(date.getUTCHours()).padStart(2, '0');
+    const min  = String(date.getUTCMinutes()).padStart(2, '0');
+    return `${dd}-${mm}-${yyyy} ${hh}:${min}`;
+  }
+
+  return str;
+}
 
 /**
  * Parse DD-MM-YYYY HH:MM or DD-MM-YYYY HH:MM:SS to Date
@@ -238,9 +284,14 @@ router.post(
           organization: req.user.organization || null
         };
 
-        // Map CSV columns
+        // Map CSV columns (format date fields, stringify the rest)
         for (const [rawH, modelField] of Object.entries(columnMap)) {
-          doc[modelField] = String(row[rawH] ?? '').trim();
+          const rawValue = row[rawH];
+          if (DATE_FIELDS.has(modelField)) {
+            doc[modelField] = formatExcelDate(rawValue);
+          } else {
+            doc[modelField] = String(rawValue ?? '').trim();
+          }
         }
 
         // Parse entry_date for date queries
