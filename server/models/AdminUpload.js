@@ -77,8 +77,7 @@ const adminUploadSchema = new mongoose.Schema({
   collection: 'adminuploads'      // explicit collection name
 });
 
-// ── Indexes ────────────────────────────────────────────────────────
-adminUploadSchema.index({ sharedWith: 1, createdAt: -1 });
+// ── Indexes ────────────────────────────────────────────────────────adminUploadSchema.index({ phone_number: 1, sharedWith: 1 }, { unique: true, sparse: true });adminUploadSchema.index({ sharedWith: 1, createdAt: -1 });
 adminUploadSchema.index({ sharedWith: 1, entryDateParsed: -1 });
 adminUploadSchema.index({ uploadedBy: 1, createdAt: -1 });
 adminUploadSchema.index({ organization: 1 });
