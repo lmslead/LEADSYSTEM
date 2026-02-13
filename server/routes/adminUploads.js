@@ -276,69 +276,38 @@ router.post(
 
       // Build batch
       const batchId = `BATCH_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
-      const ops = [];          // bulkWrite operations
-      let skippedNoPhone = 0;
-
-      rows.forEach(row => {
-        const fields = {};
+      const docs = rows.map(row => {
+        const doc = {
+          sharedWith: targetUser._id,
+          uploadedBy: req.user._id,
+          uploadBatchId: batchId,
+          organization: req.user.organization || null
+        };
 
         // Map CSV columns (format date fields, stringify the rest)
         for (const [rawH, modelField] of Object.entries(columnMap)) {
           const rawValue = row[rawH];
           if (DATE_FIELDS.has(modelField)) {
-            fields[modelField] = formatExcelDate(rawValue);
+            doc[modelField] = formatExcelDate(rawValue);
           } else {
-            fields[modelField] = String(rawValue ?? '').trim();
+            doc[modelField] = String(rawValue ?? '').trim();
           }
         }
 
         // Parse entry_date for date queries
-        fields.entryDateParsed = parseEntryDate(fields.entry_date);
+        doc.entryDateParsed = parseEntryDate(doc.entry_date);
 
-        const phone = (fields.phone_number || '').replace(/\D/g, '');
-        if (!phone) {
-          skippedNoPhone++;
-          return; // skip rows without a phone number
-        }
-
-        // $set  = all CSV fields + meta (always overwritten)
-        // $setOnInsert = fields only written on first insert
-        ops.push({
-          updateOne: {
-            filter: { phone_number: phone, sharedWith: targetUser._id },
-            update: {
-              $set: {
-                ...fields,
-                phone_number: phone,
-                uploadedBy: req.user._id,
-                uploadBatchId: batchId,
-                organization: req.user.organization || null
-              },
-              $setOnInsert: {
-                sharedWith: targetUser._id
-              }
-            },
-            upsert: true
-          }
-        });
+        return doc;
       });
 
-      if (!ops.length) {
-        return res.status(400).json({ success: false, message: 'No valid rows with phone numbers found' });
-      }
-
-      // Execute bulk upsert
-      const result = await AdminUpload.bulkWrite(ops, { ordered: false });
-      const inserted = result.upsertedCount || 0;
-      const updated  = result.modifiedCount || 0;
+      // Bulk insert
+      const inserted = await AdminUpload.insertMany(docs, { ordered: false });
 
       res.status(201).json({
         success: true,
-        message: `${inserted} new records added, ${updated} existing records updated${skippedNoPhone ? `, ${skippedNoPhone} rows skipped (no phone)` : ''}`,
+        message: `${inserted.length} records uploaded successfully`,
         batchId,
-        inserted,
-        updated,
-        skipped: skippedNoPhone
+        count: inserted.length
       });
     } catch (err) {
       console.error('Admin upload error:', err);
