@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback, useMemo } from 'react';
+import React, { useState, useEffect, useCallback } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useRefresh } from '../contexts/RefreshContext';
 import { scrollToTop } from '../utils/scrollUtils';
@@ -12,16 +12,33 @@ import axios from '../utils/axios';
 import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Pagination from '../components/Pagination';
+import VicidialCallQueue from '../components/VicidialCallQueue';
 import { formatEasternTimeForDisplay, getEasternStartOfDay, getEasternEndOfDay } from '../utils/dateUtils';
-import { isGtiOrganization } from '../config/constants';
 
 const GTI_DISPOSITION_OPTIONS = [
-  'Not Qualified',
-  'Hangup',
-  'Already a Customer',
-  'Wrong Number',
-  'Not Interested',
-  'Invalid Number',
+  'A - Answering Machine',
+  'B - Busy',
+  'CALLBK - Call Back',
+  'DAIR - Dead Air',
+  'DC - Disconnected Number',
+  'DEC - Declined Sale',
+  'DNC - DO NOT CALL',
+  'N - No Answer',
+  'NI - Not Interested',
+  'NP - No Pitch No Price',
+  'SALE - Sale Made',
+  'XFER - Call Transferred',
+  'CB - Callback',
+  'DA - Dead Air',
+  'DOK - Debt Over 15K',
+  'HLCB - Hot Lead Callback',
+  'HU - Hangup',
+  'LB - Language Barrier',
+  'Loan - LOAN',
+  'ND - No Debt',
+  'NIAP - Not Interested After Pitch',
+  'NIBP - Not Interested Before Pitch',
+  'NQ - Not Qualified',
   'Other'
 ];
 
@@ -46,6 +63,8 @@ const Agent1Dashboard = () => {
     assignmentNotes: ''
   });
   const [submitting, setSubmitting] = useState(false);
+  // Vicidial call queue — tracks which call data is currently being used to fill form
+  const [activeVicidialCallId, setActiveVicidialCallId] = useState(null);
 
   // Pagination state
   const [pagination, setPagination] = useState({
@@ -127,12 +146,7 @@ const Agent1Dashboard = () => {
   });
   const [gtiDispositionState, setGtiDispositionState] = useState({ ...INITIAL_GTI_DISPOSITION_STATE });
 
-  const isAgent1GtiOrg = useMemo(
-    () => isGtiOrganization(user?.organization || user?.organizationName || null),
-    [user]
-  );
-
-  const hasSelectedGtiDisposition = isAgent1GtiOrg && Boolean((gtiDispositionState.dispositionReason || '').trim());
+  const hasSelectedGtiDisposition = Boolean((gtiDispositionState.dispositionReason || '').trim());
   const primaryActionLabel = hasSelectedGtiDisposition ? 'Dispose Lead' : 'Add Lead';
   const primaryActionBusyLabel = hasSelectedGtiDisposition ? 'Disposing Lead...' : 'Adding Lead...';
 
@@ -161,9 +175,31 @@ const Agent1Dashboard = () => {
 
   const closeCreateLeadModal = useCallback(() => {
     setShowForm(false);
+    setActiveVicidialCallId(null);
     resetGtiDispositionState();
     setFormErrors((prev) => ({ ...prev, dispositionReason: '' }));
   }, [resetGtiDispositionState]);
+
+  // Handler for VicidialCallQueue — loads call data into the Add Lead form
+  const handleVicidialCallLoad = useCallback((callData) => {
+    // Pre-fill form with Vicidial data
+    setFormData(prev => ({
+      ...prev,
+      name: callData.name || prev.name,
+      phone: callData.phone || prev.phone,
+      email: callData.email || prev.email,
+      address: callData.address || prev.address,
+      city: callData.city || prev.city,
+      state: callData.state || prev.state,
+      zipcode: callData.zipcode || prev.zipcode,
+    }));
+
+    // Track which vicidial call we are processing
+    setActiveVicidialCallId(callData._vicidialCallId || null);
+
+    // Open the Add Lead form
+    setShowForm(true);
+  }, []);
 
   const fetchLeads = useCallback(async (page = 1) => {
     try {
@@ -351,7 +387,7 @@ const Agent1Dashboard = () => {
     }
 
     const selectedDisposition = (gtiDispositionState.dispositionReason || '').trim();
-    const shouldDisposeLead = isAgent1GtiOrg && Boolean(selectedDisposition);
+    const shouldDisposeLead = Boolean(selectedDisposition);
     if (shouldDisposeLead) {
       if (!selectedDisposition) {
         errors.dispositionReason = 'Select a disposition reason';
@@ -460,7 +496,7 @@ const Agent1Dashboard = () => {
       console.log('Auth token:', localStorage.getItem('token') ? 'Present' : 'Missing');
       console.log('User role:', user?.role);
       const selectedDisposition = (gtiDispositionState.dispositionReason || '').trim();
-      const shouldDisposeLead = isAgent1GtiOrg && Boolean(selectedDisposition);
+      const shouldDisposeLead = Boolean(selectedDisposition);
       
       // Build complete form data
       const cleanFormData = {
@@ -621,6 +657,19 @@ const Agent1Dashboard = () => {
         dispositionReason: ''
       });
       
+      // If this was from a Vicidial call, mark it complete
+      if (activeVicidialCallId) {
+        try {
+          await axios.put(`/api/vicidial/queue/${activeVicidialCallId}/complete`, {
+            leadId: createdLead?._id,
+          });
+        } catch (vcErr) {
+          console.error('Failed to mark vicidial call complete:', vcErr);
+          // Non-blocking — lead was already created successfully
+        }
+        setActiveVicidialCallId(null);
+      }
+
       closeCreateLeadModal();
 
       // Refresh leads list
@@ -971,6 +1020,9 @@ const Agent1Dashboard = () => {
           Add New Lead
         </button>
       </div>
+
+      {/* Vicidial Call Queue */}
+      <VicidialCallQueue onLoadCallData={handleVicidialCallLoad} />
 
       {/* Today's Lead Summary for Agent1 */}
       <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
@@ -1607,11 +1659,10 @@ const Agent1Dashboard = () => {
                     </div>
                   </div>
 
-                  {isAgent1GtiOrg && (
-                    <div className="mt-8 border-t border-gray-200 pt-6">
+                  <div className="mt-8 border-t border-gray-200 pt-6">
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <div>
-                          <p className="text-base font-semibold text-gray-900">GTI Disposition Reason</p>
+                          <p className="text-base font-semibold text-gray-900">Disposition Reason</p>
                           <p className="text-sm text-gray-600">
                             Choose a reason to dispose this lead immediately. Leave it blank to add the lead normally.
                           </p>
@@ -1676,7 +1727,6 @@ const Agent1Dashboard = () => {
                         </div>
                       </div>
                     </div>
-                  )}
                 </div>
 
                 {/* Footer */}

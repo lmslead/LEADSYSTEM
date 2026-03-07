@@ -324,6 +324,10 @@ const leadSchema = new mongoose.Schema({
     type: Number,
     min: 0
   },
+  clientId: {
+    type: String,
+    trim: true
+  },
   
   // Admin processing flag
   adminProcessed: {

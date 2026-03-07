@@ -46,6 +46,13 @@ const userSchema = new mongoose.Schema({
     type: mongoose.Schema.Types.ObjectId,
     ref: 'User'
   },
+  // Vicidial integration - maps this LMS user to a Vicidial agent ID
+  vicidialAgentId: {
+    type: String,
+    trim: true,
+    sparse: true,
+    index: true,
+  },
   createdAt: {
     type: Date,
     default: Date.now

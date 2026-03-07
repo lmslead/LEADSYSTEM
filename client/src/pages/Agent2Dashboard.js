@@ -10,7 +10,9 @@ import {
   CheckCircle,
   XCircle,
   AlertCircle,
-  Search
+  Search,
+  BarChart3,
+  TrendingUp
 } from 'lucide-react';
 import axios from '../utils/axios';
 import toast from 'react-hot-toast';
@@ -85,6 +87,7 @@ const Agent2Dashboard = () => {
   const { registerRefreshCallback, unregisterRefreshCallback } = useRefresh();
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [todayAdminStats, setTodayAdminStats] = useState(null);
   const [selectedLead, setSelectedLead] = useState(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
   const [showViewModal, setShowViewModal] = useState(false);
@@ -102,7 +105,7 @@ const Agent2Dashboard = () => {
   // Pagination state
   const [pagination, setPagination] = useState({
     page: 1,
-    limit: 500,
+    limit: 50,
     total: 0,
     pages: 0
   });
@@ -230,7 +233,8 @@ const Agent2Dashboard = () => {
     status: '',
     category: '',
     search: '',
-    duplicateStatus: ''
+    duplicateStatus: '',
+    progressStatus: ''
   });
 
 
@@ -243,7 +247,8 @@ const Agent2Dashboard = () => {
     conversionValue: '',
     qualificationStatus: '',
     draftDate: '',
-    requestedLoanAmount: ''
+    requestedLoanAmount: '',
+    clientId: ''
   });
 
   const [draftDateError, setDraftDateError] = useState('');
@@ -252,6 +257,26 @@ const Agent2Dashboard = () => {
   // State for handling "Others" custom disposition
   const [customDisposition, setCustomDisposition] = useState('');
   const [showCustomDisposition, setShowCustomDisposition] = useState(false);
+
+  const fetchTodayAdminStats = useCallback(async () => {
+    try {
+      const response = await axios.get('/api/leads/today-stats');
+      if (response.data?.success) {
+        setTodayAdminStats(response.data.data);
+      }
+    } catch (error) {
+      console.error('Error fetching today admin stats:', error);
+    }
+  }, []);
+
+  // Fetch today stats on mount and on interval for admin/superadmin
+  useEffect(() => {
+    if (user.role === 'admin' || user.role === 'superadmin') {
+      fetchTodayAdminStats();
+      const interval = setInterval(fetchTodayAdminStats, 60000);
+      return () => clearInterval(interval);
+    }
+  }, [fetchTodayAdminStats, user.role]);
 
   const fetchLeads = useCallback(async (page = 1) => {
     try {
@@ -264,6 +289,7 @@ const Agent2Dashboard = () => {
       if (filters.search) params.append('search', filters.search);
       if (filters.duplicateStatus) params.append('duplicateStatus', filters.duplicateStatus);
       if (filters.qualificationStatus) params.append('qualificationStatus', filters.qualificationStatus);
+      if (filters.progressStatus) params.append('progressStatus', filters.progressStatus);
 
       // Agent2 always shows today's leads only - no date filter parameters sent to server
 
@@ -300,25 +326,36 @@ const Agent2Dashboard = () => {
     const handleRefresh = () => fetchLeads(pagination.page);
     window.addEventListener('refreshLeads', handleRefresh);
 
-    // Socket.IO event listeners for real-time updates (notifications disabled)
+    // Socket.IO event listeners with debounce — prevents full reload on every event
     if (socket) {
+      const socketDebounce = { timeout: null };
+
+      const debouncedFetch = () => {
+        clearTimeout(socketDebounce.timeout);
+        socketDebounce.timeout = setTimeout(() => {
+          fetchLeads(pagination.page);
+          if (user.role === 'admin' || user.role === 'superadmin') {
+            fetchTodayAdminStats();
+          }
+        }, 800);
+      };
+
       const handleLeadUpdated = (data) => {
         console.log('Lead updated via socket in Agent2:', data);
-        // No notification toast for agents
-        fetchLeads(pagination.page); // Refresh the leads list
+        debouncedFetch();
       };
 
       const handleLeadCreated = (data) => {
         console.log('New lead created via socket in Agent2:', data);
-        // No notification toast for agents
-        fetchLeads(pagination.page); // Refresh the leads list
+        debouncedFetch();
       };
 
       socket.on('leadUpdated', handleLeadUpdated);
       socket.on('leadCreated', handleLeadCreated);
 
-      // Cleanup socket listeners
+      // Cleanup socket listeners and pending debounce
       return () => {
+        clearTimeout(socketDebounce.timeout);
         window.removeEventListener('refreshLeads', handleRefresh);
         socket.off('leadUpdated', handleLeadUpdated);
         socket.off('leadCreated', handleLeadCreated);
@@ -328,7 +365,7 @@ const Agent2Dashboard = () => {
     return () => {
       window.removeEventListener('refreshLeads', handleRefresh);
     };
-  }, [fetchLeads, pagination.page, socket]);
+  }, [fetchLeads, pagination.page, socket, fetchTodayAdminStats, user.role]);
 
   // Fetch persistent leads for Agent2 dashboard
   const fetchPersistentLeads = useCallback(async () => {
@@ -423,9 +460,13 @@ const Agent2Dashboard = () => {
     fetchLeads(1);
   }, [fetchLeads]);
 
-  // Reset pagination when filters change
+  // Debounced filter watcher — waits 400ms after last filter change before fetching
+  // Prevents an API call on every keystroke in the search box
   useEffect(() => {
-    resetPaginationAndFetch();
+    const debounce = setTimeout(() => {
+      resetPaginationAndFetch();
+    }, 400);
+    return () => clearTimeout(debounce);
   }, [filters, resetPaginationAndFetch]);
 
   const handleUpdateLead = async (e) => {
@@ -504,6 +545,9 @@ const Agent2Dashboard = () => {
       if (updateData.conversionValue && updateData.conversionValue !== '') {
         cleanUpdateData.conversionValue = parseFloat(updateData.conversionValue);
       }
+      if (updateData.clientId && updateData.clientId.trim() !== '') {
+        cleanUpdateData.clientId = updateData.clientId.trim();
+      }
 
       if (isSelectedLeadGti && draftDateDirty) {
         const trimmedDraft = (updateData.draftDate || '').trim();
@@ -569,7 +613,8 @@ const Agent2Dashboard = () => {
           conversionValue: '',
           qualificationStatus: '',
           draftDate: '',
-          requestedLoanAmount: ''
+          requestedLoanAmount: '',
+          clientId: ''
         });
       }, 500);
     } catch (error) {
@@ -632,7 +677,8 @@ const Agent2Dashboard = () => {
       state: lead.state || '',
       zipcode: lead.zipcode || '',
       notes: lead.notes || '',
-      requirements: lead.requirements || ''
+      requirements: lead.requirements || '',
+      clientId: lead.clientId || ''
     });
 
     // Clear any existing errors
@@ -756,6 +802,10 @@ const Agent2Dashboard = () => {
         cleanUpdateData.requirements = editFormData.requirements.trim();
       }
 
+      if (editFormData.clientId && editFormData.clientId.trim()) {
+        cleanUpdateData.clientId = editFormData.clientId.trim();
+      }
+
       // Add tracking info
       cleanUpdateData.lastUpdatedBy = user?.name || 'Agent2';
       cleanUpdateData.lastUpdatedAt = getEasternNow().toISOString();
@@ -794,7 +844,8 @@ const Agent2Dashboard = () => {
       conversionValue: lead.conversionValue || '',
       qualificationStatus: lead.qualificationStatus || '',
       draftDate: leadDraftDate,
-      requestedLoanAmount: lead.requestedLoanAmount ? String(lead.requestedLoanAmount) : ''
+      requestedLoanAmount: lead.requestedLoanAmount ? String(lead.requestedLoanAmount) : '',
+      clientId: lead.clientId || ''
     });
 
     setDraftDateDirty(false);
@@ -1390,6 +1441,93 @@ const Agent2Dashboard = () => {
         )}
       </div>
 
+      {/* Today's Real-Time Stat Cards - Only for Admin/SuperAdmin */}
+      {(user.role === 'admin' || user.role === 'superadmin') && (
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
+          {/* Total Today */}
+          <div className="group bg-white p-4 rounded-xl shadow-md hover:shadow-xl border border-gray-100 transition-all duration-300 hover:-translate-y-1">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-gradient-to-br from-blue-100 to-blue-200 group-hover:from-blue-500 group-hover:to-blue-600 transition-all duration-300">
+                <BarChart3 className="h-5 w-5 text-blue-600 group-hover:text-white transition-colors duration-300" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Total</p>
+                <p className="text-xl font-bold text-gray-900">
+                  {todayAdminStats ? todayAdminStats.total : '—'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Qualified Today */}
+          <div className="group bg-white p-4 rounded-xl shadow-md hover:shadow-xl border border-gray-100 transition-all duration-300 hover:-translate-y-1">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-gradient-to-br from-emerald-100 to-emerald-200 group-hover:from-emerald-500 group-hover:to-emerald-600 transition-all duration-300">
+                <CheckCircle className="h-5 w-5 text-emerald-600 group-hover:text-white transition-colors duration-300" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Qualified</p>
+                <div className="flex items-end gap-1">
+                  <p className="text-xl font-bold text-gray-900">
+                    {todayAdminStats ? todayAdminStats.qualified : '—'}
+                  </p>
+                  {todayAdminStats && (
+                    <span className="text-xs font-bold text-emerald-600 mb-0.5">
+                      {todayAdminStats.qualificationRate}%
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+
+          {/* Not Qualified Today */}
+          <div className="group bg-white p-4 rounded-xl shadow-md hover:shadow-xl border border-gray-100 transition-all duration-300 hover:-translate-y-1">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-gradient-to-br from-red-100 to-red-200 group-hover:from-red-500 group-hover:to-red-600 transition-all duration-300">
+                <XCircle className="h-5 w-5 text-red-600 group-hover:text-white transition-colors duration-300" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Not Qualified</p>
+                <p className="text-xl font-bold text-gray-900">
+                  {todayAdminStats ? todayAdminStats.notQualified : '—'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Pending Today */}
+          <div className="group bg-white p-4 rounded-xl shadow-md hover:shadow-xl border border-gray-100 transition-all duration-300 hover:-translate-y-1">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-gradient-to-br from-amber-100 to-amber-200 group-hover:from-amber-500 group-hover:to-amber-600 transition-all duration-300">
+                <Clock className="h-5 w-5 text-amber-600 group-hover:text-white transition-colors duration-300" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Pending</p>
+                <p className="text-xl font-bold text-gray-900">
+                  {todayAdminStats ? todayAdminStats.pending : '—'}
+                </p>
+              </div>
+            </div>
+          </div>
+
+          {/* Sale Today */}
+          <div className="group bg-white p-4 rounded-xl shadow-md hover:shadow-xl border border-gray-100 transition-all duration-300 hover:-translate-y-1">
+            <div className="flex items-center gap-2">
+              <div className="p-2 rounded-lg bg-gradient-to-br from-green-100 to-green-200 group-hover:from-green-500 group-hover:to-green-600 transition-all duration-300">
+                <TrendingUp className="h-5 w-5 text-green-600 group-hover:text-white transition-colors duration-300" />
+              </div>
+              <div className="flex-1">
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Sale</p>
+                <p className="text-xl font-bold text-gray-900">
+                  {todayAdminStats ? todayAdminStats.sale : '—'}
+                </p>
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
       {/* Agent2 Dashboard Summary - Only for Agent2 */}
       {user.role === 'agent2' && (
         <>
@@ -1568,6 +1706,46 @@ const Agent2Dashboard = () => {
           </button>
         </div>
 
+        {/* Progress Status Filter Buttons */}
+        <div className="flex flex-wrap items-center gap-2 mb-4">
+          <div className="flex items-center gap-1.5 mr-1">
+            <div className="p-1.5 bg-gradient-to-br from-green-100 to-green-200 rounded-lg">
+              <TrendingUp className="h-3.5 w-3.5 text-green-600" />
+            </div>
+            <span className="text-xs font-semibold text-gray-700">Progress:</span>
+          </div>
+          <button
+            onClick={() => setFilters({...filters, progressStatus: ''})}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              filters.progressStatus === ''
+                ? 'bg-indigo-600 text-white'
+                : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+            }`}
+          >
+            All
+          </button>
+          <button
+            onClick={() => setFilters({...filters, progressStatus: 'sale'})}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              filters.progressStatus === 'sale'
+                ? 'bg-green-600 text-white'
+                : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+            }`}
+          >
+            Sale
+          </button>
+          <button
+            onClick={() => setFilters({...filters, progressStatus: 'callback'})}
+            className={`px-4 py-2 rounded-lg text-sm font-medium transition-colors ${
+              filters.progressStatus === 'callback'
+                ? 'bg-orange-500 text-white'
+                : 'bg-white text-gray-700 border border-gray-300 hover:bg-gray-50'
+            }`}
+          >
+            Callback Needed
+          </button>
+        </div>
+
         <div className="grid grid-cols-1 md:grid-cols-4 gap-4">
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">Search</label>
@@ -1614,7 +1792,7 @@ const Agent2Dashboard = () => {
           <div className="flex items-end">
             <button
               onClick={() => {
-                setFilters({ status: '', category: '', search: '', duplicateStatus: '', qualificationStatus: '' });
+                setFilters({ status: '', category: '', search: '', duplicateStatus: '', qualificationStatus: '', progressStatus: '' });
               }}
               className="px-4 py-2 bg-gray-100 text-gray-700 rounded-md hover:bg-gray-200 transition-colors duration-200"
             >
@@ -2027,6 +2205,12 @@ const Agent2Dashboard = () => {
                           </span>
                         </div>
                       )}
+                      <div>
+                        <span className="text-sm font-medium text-gray-600">Client ID:</span>
+                        <span className="ml-2 text-sm font-mono font-semibold text-green-700">
+                          {selectedLead.clientId || '—'}
+                        </span>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -2162,13 +2346,11 @@ const Agent2Dashboard = () => {
                 </button>
                 <button
                   onClick={async () => {
+                    // Single fetch — reuse the already-loaded leads list to find fresh lead data
                     await fetchLeads(pagination.page);
-                    // Find and update the selected lead with fresh data
-                    const updatedLeads = await axios.get(`/api/leads`);
-                    const freshLead = updatedLeads.data?.data?.leads?.find(l => (l.leadId || l._id) === (selectedLead.leadId || selectedLead._id));
+                    const freshLead = leads.find(l => (l.leadId || l._id) === (selectedLead.leadId || selectedLead._id));
                     if (freshLead) {
                       setSelectedLead(freshLead);
-                      console.log('Refreshed lead data:', freshLead);
                     }
                   }}
                   className="w-full inline-flex justify-center rounded-md border border-gray-300 shadow-sm px-4 py-2 bg-white text-base font-medium text-gray-700 hover:bg-gray-50 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-primary-500 sm:ml-3 sm:w-auto sm:text-sm"
@@ -2375,20 +2557,38 @@ const Agent2Dashboard = () => {
                       </>
                     )}
 
-                    {/* Conversion Value (show only if status is successful) */}
+                    {/* Client ID and Conversion Value (show only when SALE) */}
                     {updateData.leadProgressStatus === 'SALE' && (
-                      <div>
-                        <label className="block text-sm font-medium text-gray-700">Conversion Value</label>
-                        <input
-                          type="number"
-                          name="conversionValue"
-                          min="0"
-                          className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
-                          value={updateData.conversionValue}
-                          onChange={(e) => setUpdateData({ ...updateData, conversionValue: e.target.value })}
-                          placeholder="Enter conversion value"
-                        />
-                      </div>
+                      <>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">Client ID</label>
+                          <input
+                            type="text"
+                            name="clientId"
+                            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                            value={updateData.clientId}
+                            onChange={(e) => setUpdateData({ ...updateData, clientId: e.target.value })}
+                            placeholder="Enter client ID (alphanumeric)"
+                          />
+                        </div>
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">Conversion Value</label>
+                          <div className="mt-1 relative rounded-md">
+                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                              <span className="text-gray-500 sm:text-sm">$</span>
+                            </div>
+                            <input
+                              type="number"
+                              name="conversionValue"
+                              min="0"
+                              className="block w-full pl-7 border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500"
+                              value={updateData.conversionValue}
+                              onChange={(e) => setUpdateData({ ...updateData, conversionValue: e.target.value })}
+                              placeholder="Enter conversion value"
+                            />
+                          </div>
+                        </div>
+                      </>
                     )}
 
                     {selectedLead && isLeadGti(selectedLead) && (
@@ -2745,6 +2945,20 @@ const Agent2Dashboard = () => {
                           placeholder="Specific requirements or preferences..."
                         />
                       </div>
+
+                      {/* Client ID (for SALE leads) */}
+                      {selectedLead?.leadProgressStatus === 'SALE' && (
+                        <div>
+                          <label className="block text-sm font-medium text-gray-700">Client ID</label>
+                          <input
+                            type="text"
+                            className="mt-1 block w-full border border-gray-300 rounded-md px-3 py-2 focus:outline-none focus:ring-primary-500 focus:border-primary-500 font-mono"
+                            value={editFormData.clientId}
+                            onChange={(e) => setEditFormData({ ...editFormData, clientId: e.target.value })}
+                            placeholder="Enter client ID (alphanumeric)"
+                          />
+                        </div>
+                      )}
                     </div>
                   </div>
                 </div>

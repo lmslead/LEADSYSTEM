@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useRefresh } from '../contexts/RefreshContext';
@@ -25,6 +25,26 @@ const Layout = ({ onDashboardRefresh }) => {
   const { triggerRefresh } = useRefresh();
   const location = useLocation();
   const navigate = useNavigate();
+
+  // Copy-paste restriction for admin, agent1, agent2
+  useEffect(() => {
+    const restrictedRoles = ['admin', 'agent1', 'agent2'];
+    if (!user || !restrictedRoles.includes(user.role)) return;
+
+    const block = (e) => e.preventDefault();
+
+    document.addEventListener('copy', block);
+    document.addEventListener('cut', block);
+    document.addEventListener('paste', block);
+    document.addEventListener('contextmenu', block);
+
+    return () => {
+      document.removeEventListener('copy', block);
+      document.removeEventListener('cut', block);
+      document.removeEventListener('paste', block);
+      document.removeEventListener('contextmenu', block);
+    };
+  }, [user]);
 
   // Show loading if user data is still being fetched
   if (loading || !user) {
@@ -107,8 +127,10 @@ const Layout = ({ onDashboardRefresh }) => {
 
   const isActive = (href) => location.pathname === href;
 
+  const isRestricted = user && ['admin', 'agent1', 'agent2'].includes(user.role);
+
   return (
-    <div className="flex h-screen bg-gray-100">
+    <div className={`flex h-screen bg-gray-100${isRestricted ? ' select-none' : ''}`}>
       {/* Mobile sidebar overlay */}
       {sidebarOpen && (
         <div className="fixed inset-0 flex z-40 md:hidden">

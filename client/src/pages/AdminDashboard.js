@@ -14,7 +14,8 @@ import {
   Save,
   X,
   Download,
-  UserCheck
+  UserCheck,
+  TrendingUp
 } from 'lucide-react';
 import axios from '../utils/axios';
 import toast from 'react-hot-toast';
@@ -39,7 +40,6 @@ const AdminDashboard = () => {
   const { registerRefreshCallback, unregisterRefreshCallback } = useRefresh();
   const [stats, setStats] = useState(null);
   const [leads, setLeads] = useState([]);
-  const [allLeadsForStats, setAllLeadsForStats] = useState([]); // All leads for stats calculation
   const [loading, setLoading] = useState(true);
   const [refreshing, setRefreshing] = useState(false);
   const [lastUpdated, setLastUpdated] = useState(getEasternNow());
@@ -48,7 +48,7 @@ const AdminDashboard = () => {
   // Pagination state
   const [pagination, setPagination] = useState({
     page: 1,
-    limit: 500,
+    limit: 50,
     total: 0,
     pages: 0
   });
@@ -74,6 +74,7 @@ const AdminDashboard = () => {
   
   // Add duplicate status filter
   const [duplicateFilter, setDuplicateFilter] = useState('all'); // 'all', 'duplicates', 'non-duplicates'
+  const [progressFilter, setProgressFilter] = useState('all'); // 'all', 'sale', 'callback'
   
   // Add organization filter
   const [organizationFilter, setOrganizationFilter] = useState('all'); // 'all' or specific organization ID
@@ -203,70 +204,12 @@ const AdminDashboard = () => {
     }
   }, []);
 
-  // Fetch all leads for stats calculation (handles large datasets up to lakhs)
-  const fetchAllLeadsForStats = useCallback(async () => {
-    try {
-      console.log('Admin Dashboard: Fetching all leads for stats calculation...');
-      const timestamp = new Date().getTime();
-      let allLeads = [];
-      let currentPage = 1;
-      const limit = 1000; // Maximum allowed limit
-      let hasMorePages = true;
-      let totalRecords = 0;
-      
-      while (hasMorePages) {
-        const url = `/api/leads?page=${currentPage}&limit=${limit}&_t=${timestamp}`;
-        
-        const response = await axios.get(url);
-        const responseData = response.data?.data;
-        const pageLeads = responseData?.leads || [];
-        const pagination = responseData?.pagination;
-        
-        if (Array.isArray(pageLeads)) {
-          allLeads = [...allLeads, ...pageLeads];
-        }
-        
-        // Update total records count
-        if (pagination) {
-          totalRecords = pagination.total;
-        }
-        
-        // Check if there are more pages
-        if (pagination && currentPage < pagination.pages) {
-          currentPage++;
-          
-          // Progress logging for large datasets
-          if (currentPage % 10 === 0) {
-            console.log(`Fetching page ${currentPage}/${pagination.pages} - ${allLeads.length}/${totalRecords} leads loaded`);
-          }
-        } else {
-          hasMorePages = false;
-        }
-        
-        // Safety check to prevent infinite loop - increased limit for lakhs of records
-        if (currentPage > 1000) {
-          console.warn('Safety break: More than 1000 pages (10 lakh records), stopping fetch');
-          hasMorePages = false;
-        }
-      }
-      
-      console.log(`Successfully fetched ${allLeads.length} leads for stats calculation`);
-      
-      setAllLeadsForStats(allLeads);
-      return allLeads;
-    } catch (error) {
-      console.error('Error fetching all leads for stats:', error);
-      setAllLeadsForStats([]);
-      return [];
-    }
-  }, []);
-
   // Request deduplication - prevent multiple identical API calls
   const pendingRequestsRef = useRef(new Map());
   
   // Use refs to hold current filter values to avoid recreating fetchLeads
   const paginationRef = useRef(pagination);
-  const filtersRef = useRef({ qualificationFilter, duplicateFilter, organizationFilter, dateFilter });
+  const filtersRef = useRef({ qualificationFilter, duplicateFilter, organizationFilter, dateFilter, progressFilter });
   
   // Update refs when values change
   useEffect(() => {
@@ -274,8 +217,8 @@ const AdminDashboard = () => {
   }, [pagination]);
   
   useEffect(() => {
-    filtersRef.current = { qualificationFilter, duplicateFilter, organizationFilter, dateFilter };
-  }, [qualificationFilter, duplicateFilter, organizationFilter, dateFilter]);
+    filtersRef.current = { qualificationFilter, duplicateFilter, organizationFilter, dateFilter, progressFilter };
+  }, [qualificationFilter, duplicateFilter, organizationFilter, dateFilter, progressFilter]);
 
   const fetchLeads = useCallback(async (silent = false, page = null) => {
     try {
@@ -300,6 +243,11 @@ const AdminDashboard = () => {
       // Add organization filter if selected
       if (filters.organizationFilter && filters.organizationFilter !== 'all') {
         url += `&organization=${filters.organizationFilter}`;
+      }
+      
+      // Add progress status filter if selected
+      if (filters.progressFilter && filters.progressFilter !== 'all') {
+        url += `&progressStatus=${filters.progressFilter}`;
       }
       
       // Add date filtering parameters
@@ -366,16 +314,8 @@ const AdminDashboard = () => {
   // Initial data fetching
   useEffect(() => {
     const initializeData = async () => {
-      // Always fetch stats first to determine dataset size
-      await fetchStats();
-      await fetchOrganizations();
-      
-      // Only fetch all leads for smaller datasets (<= 10,000 records)
-      if (!stats || stats.totalLeads <= 10000) {
-        await fetchAllLeadsForStats();
-      } else {
-        console.log('Large dataset detected, skipping full leads fetch for performance');
-      }
+      // Fetch stats and organizations in parallel for faster startup
+      await Promise.all([fetchStats(), fetchOrganizations()]);
       
       if (showLeadsSection) {
         fetchLeads();
@@ -384,7 +324,7 @@ const AdminDashboard = () => {
 
     initializeData();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [showLeadsSection, qualificationFilter, duplicateFilter, organizationFilter, dateFilter]);
+  }, [showLeadsSection, qualificationFilter, duplicateFilter, organizationFilter, dateFilter, progressFilter]);
 
   // Handle refresh functionality
   const handleDashboardRefresh = useCallback(() => {
@@ -396,6 +336,7 @@ const AdminDashboard = () => {
     setQualificationFilter('all');
     setDuplicateFilter('all');
     setOrganizationFilter('all');
+    setProgressFilter('all');
     setDateFilter({
       startDate: '',
       endDate: '',
@@ -408,7 +349,6 @@ const AdminDashboard = () => {
     const refreshData = async () => {
       try {
         await fetchStats();
-        await fetchAllLeadsForStats();
         if (showLeadsSection) {
           await fetchLeads(false, 1);
         }
@@ -421,7 +361,7 @@ const AdminDashboard = () => {
       }
     };
     refreshData();
-  }, [fetchStats, fetchAllLeadsForStats, fetchLeads, showLeadsSection]);
+  }, [fetchStats, fetchLeads, showLeadsSection]);
 
   // Register refresh callback
   useEffect(() => {
@@ -573,6 +513,15 @@ const AdminDashboard = () => {
     return isReddingtonByName || isReddingtonById;
   }, [user]);
 
+  // Periodic stats refresh — every 30 s ensures cards stay in sync with DB
+  // even if a socket event is missed (e.g. connection drop, batch import)
+  useEffect(() => {
+    const interval = setInterval(() => {
+      fetchStats(true);
+    }, 30000);
+    return () => clearInterval(interval);
+  }, [fetchStats]);
+
   // Socket.IO event listeners for real-time updates with debouncing
   useEffect(() => {
     if (socket) {
@@ -590,10 +539,6 @@ const AdminDashboard = () => {
         // Debounce refreshes to prevent excessive API calls
         socketDebounceRef.timeout = setTimeout(() => {
           fetchStats(true);
-          // Only refresh all leads for smaller datasets to avoid performance issues
-          if (!stats || stats.totalLeads <= 10000) {
-            fetchAllLeadsForStats();
-          }
           if (showLeadsSection) {
             fetchLeads(true);
           }
@@ -671,7 +616,8 @@ const AdminDashboard = () => {
         lead.alternatePhone?.includes(term) ||
         lead.email?.toLowerCase().includes(searchLower) ||
         lead._id?.toLowerCase().includes(searchLower) ||
-        lead.leadId?.toLowerCase().includes(searchLower)
+        lead.leadId?.toLowerCase().includes(searchLower) ||
+        lead.clientId?.toLowerCase().includes(searchLower)
       );
     });
     setSearchResults(filtered);
@@ -886,94 +832,31 @@ const AdminDashboard = () => {
     fetchStats(true);
   };
 
-  // Calculate real-time stats from all leads data or use server stats for large datasets
+  // Stats are computed server-side. Derive qualificationRate from server values.
   const calculateRealTimeStats = useCallback(() => {
-    // For large datasets (>10,000 records), rely on server stats to avoid performance issues
-    if (stats && stats.totalLeads > 10000) {
-      console.log(`Large dataset detected (${stats.totalLeads} records), using server-calculated stats`);
-      return {
-        ...stats,
-        pendingLeads: stats.pendingLeads || 0, // Ensure pending leads is included
-        immediateEnrollmentLeads: stats.immediateEnrollmentLeads || 0
-      };
-    }
-
-    // For smaller datasets, calculate from local data for real-time accuracy
-    if (!allLeadsForStats || allLeadsForStats.length === 0) {
-      return stats; // Return server stats if no all leads data
-    }
-
-    const totalLeads = allLeadsForStats.length;
-    const qualifiedLeads = allLeadsForStats.filter(lead => lead.qualificationStatus === 'qualified').length;
-    const notQualifiedLeads = allLeadsForStats.filter(lead => 
-      lead.qualificationStatus === 'not-qualified' || lead.qualificationStatus === 'disqualified' || lead.qualificationStatus === 'unqualified'
-    ).length;
-    const pendingLeads = allLeadsForStats.filter(lead => lead.qualificationStatus === 'pending').length;
-    const hotLeads = allLeadsForStats.filter(lead => lead.category === 'hot').length;
-    
-    // Calculate conversion rate based on LEAD PROGRESS STATUS 'SALE' divided by qualified leads
-    // Formula: (No. of SALE + Immediate Enrollment leads (leadProgressStatus only) ÷ Qualified leads) × 100
-    const immediateEnrollmentLeads = allLeadsForStats.filter(lead => 
-      lead.leadProgressStatus === 'SALE' || lead.leadProgressStatus === 'Immediate Enrollment'
-    ).length;
-    
-    // Get all unique leadProgressStatus values for debugging
-    const uniqueStatuses = [...new Set(allLeadsForStats.map(l => l.leadProgressStatus).filter(Boolean))];
-    const statusCounts = {};
-    allLeadsForStats.forEach(lead => {
-      const status = lead.leadProgressStatus || 'undefined';
-      statusCounts[status] = (statusCounts[status] || 0) + 1;
-    });
-    
-    console.log('📊 Conversion Rate Debug:', {
-      totalLeads: allLeadsForStats.length,
-      qualifiedLeads,
-      saleLeads: immediateEnrollmentLeads,
-      uniqueStatuses,
-      statusCounts,
-      conversionRate: qualifiedLeads > 0 ? ((immediateEnrollmentLeads / qualifiedLeads) * 100).toFixed(2) + '%' : '0%'
-    });
-    
-    const calculatedConversionRate = qualifiedLeads > 0 ? parseFloat(((immediateEnrollmentLeads / qualifiedLeads) * 100).toFixed(2)) : 0;
-    
-    // Calculate qualification rate
-    const totalProcessed = qualifiedLeads + notQualifiedLeads;
-    const calculatedQualificationRate = totalProcessed > 0 ? (qualifiedLeads / totalProcessed) * 100 : 0;
-
-    // Get unique active agents count
-    const activeAgents = new Set();
-    allLeadsForStats.forEach(lead => {
-      if (lead.createdBy?.name) activeAgents.add(lead.createdBy.name);
-      if (lead.assignedTo?.name) activeAgents.add(lead.assignedTo.name);
-      if (lead.lastUpdatedBy) activeAgents.add(lead.lastUpdatedBy);
-    });
-
+    if (!stats) return { qualificationRate: 0, conversionRate: 0 };
+    const q = stats.qualifiedLeads || 0;
+    const nq = stats.notQualifiedLeads || 0;
+    const qualificationRate = (q + nq) > 0
+      ? parseFloat(((q / (q + nq)) * 100).toFixed(1)) : 0;
     return {
-      ...stats, // Keep server stats as fallback
-      totalLeads,
-      qualifiedLeads,
-      notQualifiedLeads,
-      pendingLeads,
-      hotLeads,
-      conversionRate: calculatedConversionRate,
-      qualificationRate: calculatedQualificationRate,
-      activeAgents: activeAgents.size,
-      immediateEnrollmentLeads // Add this for reference
+      ...stats,
+      qualificationRate,
+      pendingLeads: stats.pendingLeads || 0,
+      immediateEnrollmentLeads: stats.immediateEnrollmentLeads || 0
     };
-  }, [allLeadsForStats, stats]);
+  }, [stats]);
 
   // Get real-time stats - Memoized to prevent recalculation on every render
   // Must be called before any early returns (React Hooks rule)
   const realTimeStats = useMemo(() => {
-    // Add null check inside the memoized function
-    if (!stats && !allLeadsForStats) {
+    if (!stats) {
       return { qualificationRate: 0, conversionRate: 0 };
     }
     return calculateRealTimeStats();
-  }, [calculateRealTimeStats, stats, allLeadsForStats]);
+  }, [calculateRealTimeStats, stats]);
   
   const qualificationRate = parseFloat(realTimeStats?.qualificationRate) || 0;
-  const conversionRate = parseFloat(realTimeStats?.conversionRate) || 0;
 
   // Apply search filter only (backend handles date/qualification/duplicate/org filters)
   // Search is client-side for immediate feedback as user types
@@ -1042,7 +925,7 @@ const AdminDashboard = () => {
         </div>
 
         {/* Stats Cards */}
-        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-6 gap-3">
+        <div className="grid grid-cols-2 md:grid-cols-3 lg:grid-cols-5 gap-3">
           {/* Total Leads Card */}
           <div className="group bg-white p-4 rounded-xl shadow-md hover:shadow-xl border border-gray-100 transition-all duration-300 hover:-translate-y-1 cursor-pointer">
             <div className="flex items-center gap-2">
@@ -1098,31 +981,15 @@ const AdminDashboard = () => {
             </div>
           </div>
 
-          {/* Conversion Rate Card */}
+          {/* Sale Card */}
           <div className="group bg-white p-4 rounded-xl shadow-md hover:shadow-xl border border-gray-100 transition-all duration-300 hover:-translate-y-1 cursor-pointer">
             <div className="flex items-center gap-2">
-              <div className="p-2 rounded-lg bg-gradient-to-br from-purple-100 to-purple-200 group-hover:from-purple-500 group-hover:to-purple-600 transition-all duration-300">
-                <Target className="h-5 w-5 text-purple-600 group-hover:text-white transition-colors duration-300" />
+              <div className="p-2 rounded-lg bg-gradient-to-br from-green-100 to-green-200 group-hover:from-green-500 group-hover:to-green-600 transition-all duration-300">
+                <TrendingUp className="h-5 w-5 text-green-600 group-hover:text-white transition-colors duration-300" />
               </div>
               <div className="flex-1">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Conversion</p>
-                <p className="text-xl font-bold text-gray-900">{conversionRate.toFixed(2)}%</p>
-                <p className="text-xs text-gray-500">
-                  {realTimeStats.immediateEnrollmentLeads || 0}/{realTimeStats.qualifiedLeads || 0}
-                </p>
-              </div>
-            </div>
-          </div>
-
-          {/* Active Agents Card */}
-          <div className="group bg-white p-4 rounded-xl shadow-md hover:shadow-xl border border-gray-100 transition-all duration-300 hover:-translate-y-1 cursor-pointer">
-            <div className="flex items-center gap-2">
-              <div className="p-2 rounded-lg bg-gradient-to-br from-indigo-100 to-indigo-200 group-hover:from-indigo-500 group-hover:to-indigo-600 transition-all duration-300">
-                <Users className="h-5 w-5 text-indigo-600 group-hover:text-white transition-colors duration-300" />
-              </div>
-              <div className="flex-1">
-                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Agents</p>
-                <p className="text-xl font-bold text-gray-900">{realTimeStats.activeAgents || 0}</p>
+                <p className="text-xs font-semibold text-gray-500 uppercase tracking-wider">Sale</p>
+                <p className="text-xl font-bold text-gray-900">{realTimeStats.immediateEnrollmentLeads || 0}</p>
               </div>
             </div>
           </div>
@@ -1174,7 +1041,7 @@ const AdminDashboard = () => {
               <div className="flex-1">
                 <input
                   type="text"
-                  placeholder="Search leads by name, phone, email, or lead ID..."
+                  placeholder="Search leads by name, phone, email, lead ID, or client ID..."
                   value={searchTerm}
                   onChange={(e) => handleSearch(e.target.value)}
                   className="w-full px-4 py-2 border-2 border-gray-200 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none transition-all duration-200 text-sm placeholder-gray-400"
@@ -1340,6 +1207,55 @@ const AdminDashboard = () => {
               </div>
             </div>
             
+            {/* Progress Status Filter */}
+            <div className="flex items-center gap-2">
+              <div className="p-1.5 bg-gradient-to-br from-green-100 to-green-200 rounded-lg">
+                <TrendingUp className="h-3.5 w-3.5 text-green-600" />
+              </div>
+              <span className="text-xs font-semibold text-gray-700">Progress:</span>
+              <div className="flex gap-1.5">
+                <button
+                  onClick={() => {
+                    setProgressFilter('all');
+                    resetPaginationAndFetch();
+                  }}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all duration-200 ${
+                    progressFilter === 'all'
+                      ? 'bg-gradient-to-r from-blue-600 to-indigo-600 text-white shadow-md scale-105'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:scale-105'
+                  }`}
+                >
+                  All
+                </button>
+                <button
+                  onClick={() => {
+                    setProgressFilter('sale');
+                    resetPaginationAndFetch();
+                  }}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all duration-200 ${
+                    progressFilter === 'sale'
+                      ? 'bg-gradient-to-r from-green-600 to-green-600 text-white shadow-md scale-105'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:scale-105'
+                  }`}
+                >
+                  Sale
+                </button>
+                <button
+                  onClick={() => {
+                    setProgressFilter('callback');
+                    resetPaginationAndFetch();
+                  }}
+                  className={`px-3 py-1.5 text-xs font-semibold rounded-lg transition-all duration-200 ${
+                    progressFilter === 'callback'
+                      ? 'bg-gradient-to-r from-orange-500 to-orange-500 text-white shadow-md scale-105'
+                      : 'bg-gray-100 text-gray-700 hover:bg-gray-200 hover:scale-105'
+                  }`}
+                >
+                  Callback Needed
+                </button>
+              </div>
+            </div>
+
             {/* Duplicate Status Filter */}
             <div className="flex items-center gap-2">
               <div className="p-1.5 bg-gradient-to-br from-amber-100 to-amber-200 rounded-lg">
@@ -1623,6 +1539,13 @@ const AdminDashboard = () => {
                           </span>
                         ) : (
                           <span className="text-gray-400 italic text-xs">No status</span>
+                        )}
+                        {lead.clientId && (
+                          <div className="mt-1">
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-green-50 text-green-700 font-mono text-xs truncate" title={`Client ID: ${lead.clientId}`}>
+                              ID: {lead.clientId}
+                            </span>
+                          </div>
                         )}
                         {isReddingtonAdmin && lead.lastUpdatedBy && (
                           <div className="text-xs text-gray-500 truncate">
@@ -2223,6 +2146,23 @@ const AdminDashboard = () => {
                         ) : (
                           <span className="text-sm text-gray-900 text-right">
                             {selectedLead.followUpTime || '—'}
+                          </span>
+                        )}
+                      </div>
+
+                      <div className="flex justify-between items-start">
+                        <span className="text-sm font-medium text-gray-600">Client ID:</span>
+                        {isReddingtonAdmin && isEditing ? (
+                          <input
+                            type="text"
+                            value={editedLead.clientId || ''}
+                            onChange={(e) => handleInputChange('clientId', e.target.value)}
+                            className="text-sm border border-gray-300 rounded px-2 py-1 w-40 font-mono"
+                            placeholder="e.g. ABC123"
+                          />
+                        ) : (
+                          <span className="text-sm text-green-700 font-mono font-semibold text-right">
+                            {selectedLead.clientId || '—'}
                           </span>
                         )}
                       </div>

@@ -1,15 +1,21 @@
 import React, { useState } from 'react';
-import { X, User, Mail, Lock, Shield } from 'lucide-react';
+import { X, User, Mail, Lock, Shield, Phone, Building2 } from 'lucide-react';
 import axios from '../utils/axios';
 import toast from 'react-hot-toast';
+import { useAuth } from '../contexts/AuthContext';
 
-const CreateAgentModal = ({ isOpen, onClose, onAgentCreated }) => {
+const CreateAgentModal = ({ isOpen, onClose, onAgentCreated, organizations = [] }) => {
+  const { user } = useAuth();
+  const isSuperAdmin = user?.role === 'superadmin';
+
   const [formData, setFormData] = useState({
     name: '',
     email: '',
     password: '',
     confirmPassword: '',
-    role: 'agent1'
+    role: 'agent1',
+    vicidialAgentId: '',
+    organization: ''
   });
   const [loading, setLoading] = useState(false);
   const [errors, setErrors] = useState({});
@@ -43,6 +49,10 @@ const CreateAgentModal = ({ isOpen, onClose, onAgentCreated }) => {
       newErrors.email = 'Please enter a valid email';
     }
 
+    if (isSuperAdmin && !formData.organization) {
+      newErrors.organization = 'Organization is required';
+    }
+
     if (!formData.password) {
       newErrors.password = 'Password is required';
     } else if (formData.password.length < 6) {
@@ -68,12 +78,17 @@ const CreateAgentModal = ({ isOpen, onClose, onAgentCreated }) => {
 
     setLoading(true);
     try {
-      const response = await axios.post('/api/auth/create-agent', {
+      const payload = {
         name: formData.name,
         email: formData.email,
         password: formData.password,
-        role: formData.role
-      });
+        role: formData.role,
+        vicidialAgentId: formData.vicidialAgentId.trim() || undefined
+      };
+      if (isSuperAdmin && formData.organization) {
+        payload.organization = formData.organization;
+      }
+      const response = await axios.post('/api/auth/create-agent', payload);
 
       toast.success(response.data.message);
       onAgentCreated(response.data.data.user);
@@ -84,7 +99,9 @@ const CreateAgentModal = ({ isOpen, onClose, onAgentCreated }) => {
         email: '',
         password: '',
         confirmPassword: '',
-        role: 'agent1'
+        role: 'agent1',
+        vicidialAgentId: '',
+        organization: ''
       });
       onClose();
 
@@ -155,6 +172,32 @@ const CreateAgentModal = ({ isOpen, onClose, onAgentCreated }) => {
             {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
           </div>
 
+          {/* Organization Field — SuperAdmin only */}
+          {isSuperAdmin && (
+            <div>
+              <label className="block text-sm font-medium text-gray-700 mb-1">
+                Organization <span className="text-red-500">*</span>
+              </label>
+              <div className="relative">
+                <Building2 className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+                <select
+                  name="organization"
+                  value={formData.organization}
+                  onChange={handleChange}
+                  className={`w-full pl-10 pr-3 py-2 border rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent ${
+                    errors.organization ? 'border-red-500' : 'border-gray-300'
+                  }`}
+                >
+                  <option value="">Select organization...</option>
+                  {organizations.map(org => (
+                    <option key={org._id} value={org._id}>{org.name}</option>
+                  ))}
+                </select>
+              </div>
+              {errors.organization && <p className="text-red-500 text-xs mt-1">{errors.organization}</p>}
+            </div>
+          )}
+
           {/* Role Field */}
           <div>
             <label className="block text-sm font-medium text-gray-700 mb-1">
@@ -172,6 +215,25 @@ const CreateAgentModal = ({ isOpen, onClose, onAgentCreated }) => {
                 <option value="agent2">Agent 2 (Follow-up & Conversion)</option>
               </select>
             </div>
+          </div>
+
+          {/* Vicidial Agent ID Field */}
+          <div>
+            <label className="block text-sm font-medium text-gray-700 mb-1">
+              Vicidial Agent ID <span className="text-gray-400 font-normal">(optional)</span>
+            </label>
+            <div className="relative">
+              <Phone className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-400" size={20} />
+              <input
+                type="text"
+                name="vicidialAgentId"
+                value={formData.vicidialAgentId}
+                onChange={handleChange}
+                className="w-full pl-10 pr-3 py-2 border border-gray-300 rounded-lg focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                placeholder="e.g. AGENT001"
+              />
+            </div>
+            <p className="text-xs text-gray-500 mt-1">Maps this agent to a Vicidial agent for real-time call data</p>
           </div>
 
           {/* Password Field */}

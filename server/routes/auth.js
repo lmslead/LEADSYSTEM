@@ -112,6 +112,7 @@ router.post('/create-agent', protect, registerValidation, handleValidationErrors
     }
 
     const { name, email, password, role } = req.body;
+    const vicidialAgentId = (req.body.vicidialAgentId || '').toString().trim();
 
     // Validate role for agents
     if (!['agent1', 'agent2'].includes(role)) {
@@ -130,17 +131,31 @@ router.post('/create-agent', protect, registerValidation, handleValidationErrors
       });
     }
 
+    // Check if vicidialAgentId is already in use
+    if (vicidialAgentId) {
+      const existingVicidialUser = await User.findOne({ vicidialAgentId });
+      if (existingVicidialUser) {
+        return res.status(400).json({
+          success: false,
+          message: `Vicidial Agent ID "${vicidialAgentId}" is already assigned to ${existingVicidialUser.name}`
+        });
+      }
+    }
+
     // For admin users, agents must be in same organization
+    // For super admin, organization must be provided in the request body
     let organizationId = null;
     if (req.user.role === 'admin') {
       organizationId = req.user.organization;
     } else if (req.user.role === 'superadmin') {
-      // SuperAdmin should specify organization (handled in organizations routes)
-      // This route is for admin creating agents in their organization
-      return res.status(400).json({
-        success: false,
-        message: 'SuperAdmin should use organization-specific routes to create users'
-      });
+      const orgId = (req.body.organization || '').toString().trim();
+      if (!orgId) {
+        return res.status(400).json({
+          success: false,
+          message: 'organization is required when superadmin creates an agent'
+        });
+      }
+      organizationId = orgId;
     }
 
     // Create agent user
@@ -150,7 +165,8 @@ router.post('/create-agent', protect, registerValidation, handleValidationErrors
       password,
       role,
       organization: organizationId,
-      createdBy: req.user._id
+      createdBy: req.user._id,
+      vicidialAgentId: vicidialAgentId || undefined
     });
 
     // Populate organization for response
@@ -549,6 +565,7 @@ router.put('/agents/:id', protect, [
     }
 
     const { name, email } = req.body;
+    const vicidialAgentId = (req.body.vicidialAgentId || '').toString().trim();
     const agent = await User.findById(req.params.id);
 
     if (!agent || !['agent1', 'agent2'].includes(agent.role)) {
@@ -573,9 +590,24 @@ router.put('/agents/:id', protect, [
       }
     }
 
+    // Check if vicidialAgentId is already assigned to another user
+    if (vicidialAgentId) {
+      const existingVicidialUser = await User.findOne({
+        vicidialAgentId: vicidialAgentId,
+        _id: { $ne: req.params.id }
+      });
+      if (existingVicidialUser) {
+        return res.status(400).json({
+          success: false,
+          message: `Vicidial Agent ID "${vicidialAgentId}" is already assigned to ${existingVicidialUser.name}`
+        });
+      }
+    }
+
     // Update agent information
     agent.name = name;
     agent.email = email;
+    agent.vicidialAgentId = vicidialAgentId || undefined;
     await agent.save();
 
     res.status(200).json({
@@ -625,6 +657,7 @@ router.put('/users/:id', protect, [
     }
 
     const { name, email, password } = req.body;
+    const vicidialAgentId = (req.body.vicidialAgentId || '').toString().trim();
     const targetUser = await User.findById(req.params.id);
 
     if (!targetUser) {
@@ -665,9 +698,28 @@ router.put('/users/:id', protect, [
       }
     }
 
+    // Check if vicidialAgentId is already assigned to another user (agents only)
+    if (['agent1', 'agent2'].includes(targetUser.role) && vicidialAgentId) {
+      const existingVicidialUser = await User.findOne({
+        vicidialAgentId: vicidialAgentId,
+        _id: { $ne: req.params.id }
+      });
+      if (existingVicidialUser) {
+        return res.status(400).json({
+          success: false,
+          message: `Vicidial Agent ID "${vicidialAgentId}" is already assigned to ${existingVicidialUser.name}`
+        });
+      }
+    }
+
     // Update user information
     targetUser.name = name;
     targetUser.email = email;
+
+    // Update vicidialAgentId for agents
+    if (['agent1', 'agent2'].includes(targetUser.role)) {
+      targetUser.vicidialAgentId = vicidialAgentId || undefined;
+    }
 
     // Update password if provided
     if (password && password.trim() !== '') {

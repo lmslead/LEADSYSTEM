@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, UserPlus, ToggleLeft, ToggleRight, Eye, EyeOff, Trash2, Edit3, Save, X, Key } from 'lucide-react';
+import { Users, UserPlus, ToggleLeft, ToggleRight, Eye, EyeOff, Trash2, Edit3, Save, X, Key, Phone } from 'lucide-react';
 import axios from '../utils/axios';
 import toast from 'react-hot-toast';
 import LoadingSpinner from './LoadingSpinner';
@@ -7,6 +7,7 @@ import CreateAgentModal from './CreateAgentModal';
 
 const SuperAdminUserManagement = () => {
   const [users, setUsers] = useState([]);
+  const [organizations, setOrganizations] = useState([]);
   const [loading, setLoading] = useState(true);
   const [isCreateModalOpen, setIsCreateModalOpen] = useState(false);
   const [selectedUsers, setSelectedUsers] = useState([]);
@@ -18,7 +19,8 @@ const SuperAdminUserManagement = () => {
     name: '', 
     email: '', 
     password: '',
-    showPasswordField: false 
+    showPasswordField: false,
+    vicidialAgentId: ''
   });
   const [isUpdating, setIsUpdating] = useState(false);
 
@@ -27,7 +29,17 @@ const SuperAdminUserManagement = () => {
 
   useEffect(() => {
     fetchUsers();
+    fetchOrganizations();
   }, []);
+
+  const fetchOrganizations = async () => {
+    try {
+      const response = await axios.get('/api/organizations');
+      setOrganizations(Array.isArray(response.data?.data) ? response.data.data : []);
+    } catch (error) {
+      console.error('Fetch organizations error:', error);
+    }
+  };
 
   const fetchUsers = async () => {
     try {
@@ -89,13 +101,14 @@ const SuperAdminUserManagement = () => {
       name: targetUser.name,
       email: targetUser.email,
       password: '',
-      showPasswordField: false
+      showPasswordField: false,
+      vicidialAgentId: targetUser.vicidialAgentId || ''
     });
   };
 
   const cancelEditUser = () => {
     setEditingUser(null);
-    setEditFormData({ name: '', email: '', password: '', showPasswordField: false });
+    setEditFormData({ name: '', email: '', password: '', showPasswordField: false, vicidialAgentId: '' });
   };
 
   const togglePasswordField = () => {
@@ -119,10 +132,16 @@ const SuperAdminUserManagement = () => {
 
     setIsUpdating(true);
     try {
+      const targetUserData = users.find(u => u._id === userId);
       const updateData = {
         name: editFormData.name.trim(),
         email: editFormData.email.trim()
       };
+
+      // Include vicidialAgentId for agents
+      if (targetUserData && ['agent1', 'agent2'].includes(targetUserData.role)) {
+        updateData.vicidialAgentId = editFormData.vicidialAgentId.trim();
+      }
 
       // Include password only if it's being changed
       if (editFormData.showPasswordField && editFormData.password.trim()) {
@@ -137,13 +156,14 @@ const SuperAdminUserManagement = () => {
           ? { 
               ...user, 
               name: editFormData.name.trim(), 
-              email: editFormData.email.trim() 
+              email: editFormData.email.trim(),
+              vicidialAgentId: ['agent1', 'agent2'].includes(user.role) ? editFormData.vicidialAgentId.trim() || undefined : user.vicidialAgentId
             }
           : user
       ));
 
       setEditingUser(null);
-      setEditFormData({ name: '', email: '', password: '', showPasswordField: false });
+      setEditFormData({ name: '', email: '', password: '', showPasswordField: false, vicidialAgentId: '' });
       toast.success(response.data.message);
     } catch (error) {
       const message = error.response?.data?.message || 'Error updating user information';
@@ -432,6 +452,7 @@ const SuperAdminUserManagement = () => {
                       />
                     </th>
                     <th className="text-left py-3 px-4 font-medium text-gray-900">User</th>
+                    <th className="text-left py-3 px-4 font-medium text-gray-900">Vicidial ID</th>
                     <th className="text-left py-3 px-4 font-medium text-gray-900">Role</th>
                     <th className="text-left py-3 px-4 font-medium text-gray-900">Status</th>
                     <th className="text-left py-3 px-4 font-medium text-gray-900">Last Login</th>
@@ -488,6 +509,32 @@ const SuperAdminUserManagement = () => {
                           <div>
                             <div className="font-medium text-gray-900">{targetUser.name}</div>
                             <div className="text-sm text-gray-600">{targetUser.email}</div>
+                          </div>
+                        )}
+                      </td>
+                      <td className="py-4 px-4">
+                        {editingUser === targetUser._id && ['agent1', 'agent2'].includes(targetUser.role) ? (
+                          <input
+                            type="text"
+                            value={editFormData.vicidialAgentId}
+                            onChange={(e) => setEditFormData({ ...editFormData, vicidialAgentId: e.target.value })}
+                            className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-purple-500 focus:border-transparent"
+                            placeholder="Vicidial Agent ID"
+                          />
+                        ) : (
+                          <div className="flex items-center">
+                            {['agent1', 'agent2'].includes(targetUser.role) ? (
+                              targetUser.vicidialAgentId ? (
+                                <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-indigo-100 text-indigo-700">
+                                  <Phone size={12} className="mr-1" />
+                                  {targetUser.vicidialAgentId}
+                                </span>
+                              ) : (
+                                <span className="text-xs text-gray-400">Not mapped</span>
+                              )
+                            ) : (
+                              <span className="text-xs text-gray-400">N/A</span>
+                            )}
                           </div>
                         )}
                       </td>
@@ -594,6 +641,7 @@ const SuperAdminUserManagement = () => {
         isOpen={isCreateModalOpen}
         onClose={() => setIsCreateModalOpen(false)}
         onAgentCreated={handleUserCreated}
+        organizations={organizations}
       />
     </div>
   );

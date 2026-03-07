@@ -25,7 +25,8 @@ export const SocketProvider = ({ children }) => {
           forceNew: false, // Don't force new connection
           auth: {
             userId: user._id,
-            userRole: user.role
+            userRole: user.role,
+            organizationId: user.organization || user.organizationId || undefined
           }
         });
 

@@ -5,6 +5,7 @@ const express = require('express');
 const mongoose = require('mongoose');
 const cors = require('cors');
 const helmet = require('helmet');
+const compression = require('compression');
 const rateLimit = require('express-rate-limit');
 const mongoSanitize = require('express-mongo-sanitize');
 const morgan = require('morgan');
@@ -22,6 +23,7 @@ const leadRoutes = require('./routes/leads');
 const organizationRoutes = require('./routes/organizations');
 const gtiIncomingRoutes = require('./routes/gtiIncoming');
 const adminUploadRoutes = require('./routes/adminUploads');
+const vicidialRoutes = require('./routes/vicidial');
 
 const app = express();
 const server = http.createServer(app);
@@ -68,10 +70,12 @@ app.use(cors({
 // =========================
 // Security Middlewares
 // =========================
+app.use(compression()); // gzip all responses — reduces payload size 60–80%
 app.use(helmet());
 app.use(mongoSanitize());
 app.use(express.json({ limit: '30mb' }));
 app.use(express.urlencoded({ extended: true, limit: '30mb' }));
+app.use(express.text({ limit: '10mb', type: ['text/plain', 'text/*'] }));
 app.use(morgan('combined'));
 
 // =========================
@@ -150,6 +154,7 @@ app.use('/api/leads', leadRoutes);
 app.use('/api/organizations', organizationRoutes);
 app.use('/api/gti', gtiIncomingRoutes);
 app.use('/api/admin-uploads', adminUploadRoutes);
+app.use('/api/vicidial', vicidialRoutes);
 
 // =========================
 // HEALTH CHECK

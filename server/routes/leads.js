@@ -1060,7 +1060,8 @@ router.get('/', protect, [
     // IMPORTANT: Apply organization filter FIRST for non-REDDINGTON admins
     // This ensures all subsequent filters work within the correct organization scope
     if (req.user.role === 'admin') {
-      const adminOrganization = await Organization.findById(req.user.organization);
+      // Use .lean() and select only name to avoid full document overhead
+      const adminOrganization = await Organization.findById(req.user.organization).select('name').lean();
       
       if (adminOrganization && adminOrganization.name === 'REDDINGTON GLOBAL CONSULTANCY') {
         // REDDINGTON GLOBAL CONSULTANCY Admin can filter by organization
@@ -1106,6 +1107,15 @@ router.get('/', protect, [
       // 'all' shows both duplicates and non-duplicates (no filter added)
     }
 
+    // Lead progress status filter
+    if (req.query.progressStatus && req.query.progressStatus !== 'all') {
+      if (req.query.progressStatus === 'sale') {
+        filter.leadProgressStatus = { $in: ['SALE', 'Sale Long Play', 'Immediate Enrollment'] };
+      } else if (req.query.progressStatus === 'callback') {
+        filter.leadProgressStatus = 'Callback Needed';
+      }
+    }
+
     // Search functionality
     if (req.query.search) {
       filter.$or = [
@@ -1113,7 +1123,8 @@ router.get('/', protect, [
         { email: { $regex: req.query.search, $options: 'i' } },
         { company: { $regex: req.query.search, $options: 'i' } },
         { phone: { $regex: req.query.search, $options: 'i' } },
-        { leadId: { $regex: req.query.search, $options: 'i' } }
+        { leadId: { $regex: req.query.search, $options: 'i' } },
+        { clientId: { $regex: req.query.search, $options: 'i' } }
       ];
     }
 
@@ -1231,22 +1242,44 @@ router.get('/', protect, [
     console.log('Final filter:', filter);
     console.log('User role:', req.user.role, 'User ID:', req.user._id);
 
-    // Get leads with pagination
-    const leads = await Lead.find(filter)
-      .populate('createdBy', 'name email')
-      .populate('updatedBy', 'name email')
-      .populate('assignedTo', 'name email')
-      .populate('assignedBy', 'name email')
-      .populate('organization', 'name description')
-      .populate('disposedBy', 'name email')
-      .populate('duplicateOf', 'leadId name email phone')
-      .populate('duplicateDetectedBy', 'name email')
-      .sort({ createdAt: -1, _id: -1 }) // Added _id for consistent sorting
-      .skip(skip)
-      .limit(limit);
+    // List-view projection — only fields needed for the table (not editing/detail views)
+    const listProjection = {
+      leadId: 1, name: 1, email: 1, phone: 1, alternatePhone: 1,
+      status: 1, category: 1, qualificationStatus: 1, leadProgressStatus: 1,
+      isDuplicate: 1, duplicateReason: 1, duplicateOf: 1,
+      isDisposed: 1, disposition1: 1,
+      totalDebtAmount: 1, debtCategory: 1, debtTypes: 1, numberOfCreditors: 1,
+      monthlyDebtPayment: 1, creditScore: 1, creditScoreRange: 1,
+      requestedLoanAmount: 1,
+      address: 1, city: 1, state: 1, zipcode: 1,
+      notes: 1, followUpDate: 1, followUpTime: 1, followUpNotes: 1,
+      draftDate: 1, adminProcessed: 1, adminProcessedAt: 1,
+      assignedAt: 1, assignmentNotes: 1,
+      createdBy: 1, updatedBy: 1, assignedTo: 1, assignedBy: 1,
+      organization: 1, disposedBy: 1, duplicateDetectedBy: 1,
+      gtiCallUuid: 1, gtiPrimaryPhone: 1,
+      clientId: 1, conversionValue: 1, convertedAt: 1,
+      lastUpdatedBy: 1, lastUpdatedAt: 1,
+      createdAt: 1, updatedAt: 1
+    };
 
-    // Get total count for pagination
-    const total = await Lead.countDocuments(filter);
+    // Run leads fetch and count in parallel — saves one DB round-trip
+    const [leads, total] = await Promise.all([
+      Lead.find(filter, listProjection)
+        .populate('createdBy', 'name email')
+        .populate('updatedBy', 'name email')
+        .populate('assignedTo', 'name email')
+        .populate('assignedBy', 'name email')
+        .populate('organization', 'name description')
+        .populate('disposedBy', 'name email')
+        .populate('duplicateOf', 'leadId name email phone')
+        .populate('duplicateDetectedBy', 'name email')
+        .sort({ createdAt: -1, _id: -1 })
+        .skip(skip)
+        .limit(limit)
+        .lean(),
+      Lead.countDocuments(filter)
+    ]);
 
     console.log('Found leads:', leads.length, 'Total count:', total);
 
@@ -1326,6 +1359,45 @@ router.get('/available-agents', protect, async (req, res) => {
       message: 'Error fetching available agents',
       error: process.env.NODE_ENV === 'development' ? error.message : {}
     });
+  }
+});
+
+// @desc    Get today's lead statistics for admin dashboard Today Leads view
+// @route   GET /api/leads/today-stats
+// @access  Private (Admin, SuperAdmin)
+router.get('/today-stats', protect, authorize('admin', 'superadmin'), async (req, res) => {
+  try {
+    const todayStart = getEasternStartOfDay();
+    const todayEnd = getEasternEndOfDay();
+    const dateFilter = { createdAt: { $gte: todayStart, $lte: todayEnd } };
+
+    // Apply organization filter for non-superadmin
+    let orgFilter = {};
+    if (req.user.role === 'admin') {
+      orgFilter = { organization: req.user.organization };
+    }
+
+    const baseFilter = { ...orgFilter, ...dateFilter };
+
+    const [total, qualified, notQualified, pending, sale] = await Promise.all([
+      Lead.countDocuments(baseFilter),
+      Lead.countDocuments({ ...baseFilter, qualificationStatus: 'qualified' }),
+      Lead.countDocuments({ ...baseFilter, qualificationStatus: { $in: ['not-qualified', 'disqualified', 'unqualified'] } }),
+      Lead.countDocuments({ ...baseFilter, qualificationStatus: 'pending' }),
+      Lead.countDocuments({ ...baseFilter, leadProgressStatus: { $in: ['SALE', 'Immediate Enrollment'] } })
+    ]);
+
+    const qualificationRate = (qualified + notQualified) > 0
+      ? parseFloat(((qualified / (qualified + notQualified)) * 100).toFixed(1))
+      : 0;
+
+    res.json({
+      success: true,
+      data: { total, qualified, notQualified, pending, sale, qualificationRate }
+    });
+  } catch (error) {
+    console.error('Error fetching today stats:', error);
+    res.status(500).json({ success: false, message: 'Server error' });
   }
 });
 
@@ -1665,7 +1737,7 @@ router.put('/:id', protect, updateLeadValidation, handleValidationErrors, async 
           'callDisposition', 'engagementOutcome', 'disqualification',
           'followUpDate', 'followUpTime', 'followUpNotes', 'conversionValue', 'requestedLoanAmount',
           'leadProgressStatus', 'agent2LastAction', 'lastUpdatedBy', 'lastUpdatedAt',
-          'qualificationStatus', 'assignmentNotes'
+          'qualificationStatus', 'assignmentNotes', 'clientId'
         ];
       } else {
         // Other organization admins have limited update access
@@ -1674,7 +1746,7 @@ router.put('/:id', protect, updateLeadValidation, handleValidationErrors, async 
           'callDisposition', 'engagementOutcome', 'disqualification',
           'followUpDate', 'followUpTime', 'followUpNotes', 'conversionValue', 'requestedLoanAmount',
           'leadProgressStatus', 'agent2LastAction', 'lastUpdatedBy', 'lastUpdatedAt',
-          'qualificationStatus'
+          'qualificationStatus', 'clientId'
         ];
       }
     } else if (['agent2', 'superadmin'].includes(req.user.role)) {
@@ -1689,7 +1761,7 @@ router.put('/:id', protect, updateLeadValidation, handleValidationErrors, async 
         'callDisposition', 'engagementOutcome', 'disqualification',
         'followUpDate', 'followUpTime', 'followUpNotes', 'conversionValue', 'requestedLoanAmount',
         'leadProgressStatus', 'agent2LastAction', 'lastUpdatedBy', 'lastUpdatedAt',
-        'qualificationStatus', 'assignmentNotes'
+        'qualificationStatus', 'assignmentNotes', 'clientId'
       ];
     }
 
@@ -2181,9 +2253,12 @@ router.get('/dashboard/stats', protect, async (req, res) => {
       });
       stats.activeAgents = activeAgents;
     } else if (role === 'admin') {
-      // Admin sees only data from their organization - OPTIMIZED with aggregation
-      const orgFilter = { organization: req.user.organization };
-      
+      // Check if this admin belongs to REDDINGTON (same logic as the main leads list endpoint).
+      // REDDINGTON admin can see all organizations; other admins see only their own org.
+      const adminOrganization = await Organization.findById(req.user.organization).select('name').lean();
+      const isReddingtonAdmin = adminOrganization && adminOrganization.name === 'REDDINGTON GLOBAL CONSULTANCY';
+      const orgFilter = isReddingtonAdmin ? {} : { organization: req.user.organization };
+
       // Use single aggregation pipeline for better performance
       const aggregationResults = await Lead.aggregate([
         { $match: orgFilter },
@@ -2226,12 +2301,11 @@ router.get('/dashboard/stats', protect, async (req, res) => {
       const closed = statusMap.closed || 0;
       const immediateEnrollment = results.sales[0]?.count || 0;
 
-      // Get active agents count from admin's organization only
-      const activeAgents = await User.countDocuments({ 
-        organization: req.user.organization,
-        role: { $in: ['agent1', 'agent2'] },
-        isActive: { $ne: false }
-      });
+      // REDDINGTON admin sees all agents; other admins see only their org's agents
+      const agentFilter = isReddingtonAdmin
+        ? { role: { $in: ['agent1', 'agent2'] }, isActive: { $ne: false } }
+        : { organization: req.user.organization, role: { $in: ['agent1', 'agent2'] }, isActive: { $ne: false } };
+      const activeAgents = await User.countDocuments(agentFilter);
 
       // Calculate conversion rate: (SALE calls ÷ Qualified leads) × 100
       const conversionRate = qualified > 0 ? ((immediateEnrollment / qualified) * 100).toFixed(2) : 0;

@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { Users, UserPlus, ToggleLeft, ToggleRight, Eye, EyeOff, Trash2, Edit3, Save, X } from 'lucide-react';
+import { Users, UserPlus, ToggleLeft, ToggleRight, Eye, EyeOff, Trash2, Edit3, Save, X, Phone } from 'lucide-react';
 import axios from '../utils/axios';
 import toast from 'react-hot-toast';
 import LoadingSpinner from './LoadingSpinner';
@@ -16,7 +16,7 @@ const AgentManagement = () => {
   
   // Edit agent states
   const [editingAgent, setEditingAgent] = useState(null);
-  const [editFormData, setEditFormData] = useState({ name: '', email: '' });
+  const [editFormData, setEditFormData] = useState({ name: '', email: '', vicidialAgentId: '' });
   const [isUpdating, setIsUpdating] = useState(false);
 
   // Check if user can create agents (only REDDINGTON GLOBAL CONSULTANCY admins or superadmins)
@@ -72,13 +72,14 @@ const AgentManagement = () => {
     setEditingAgent(agent._id);
     setEditFormData({
       name: agent.name,
-      email: agent.email
+      email: agent.email,
+      vicidialAgentId: agent.vicidialAgentId || ''
     });
   };
 
   const cancelEditAgent = () => {
     setEditingAgent(null);
-    setEditFormData({ name: '', email: '' });
+    setEditFormData({ name: '', email: '', vicidialAgentId: '' });
   };
 
   const saveAgentChanges = async (agentId) => {
@@ -91,18 +92,19 @@ const AgentManagement = () => {
     try {
       await axios.put(`/api/auth/agents/${agentId}`, {
         name: editFormData.name.trim(),
-        email: editFormData.email.trim()
+        email: editFormData.email.trim(),
+        vicidialAgentId: editFormData.vicidialAgentId.trim()
       });
 
       // Update local state
       setAgents(prev => prev.map(agent =>
         agent._id === agentId
-          ? { ...agent, name: editFormData.name.trim(), email: editFormData.email.trim() }
+          ? { ...agent, name: editFormData.name.trim(), email: editFormData.email.trim(), vicidialAgentId: editFormData.vicidialAgentId.trim() }
           : agent
       ));
 
       setEditingAgent(null);
-      setEditFormData({ name: '', email: '' });
+      setEditFormData({ name: '', email: '', vicidialAgentId: '' });
       toast.success('Agent information updated successfully');
     } catch (error) {
       const message = error.response?.data?.message || 'Error updating agent information';
@@ -309,6 +311,7 @@ const AgentManagement = () => {
                     />
                   </th>
                   <th className="text-left py-3 px-4 font-medium text-gray-900">Agent</th>
+                  <th className="text-left py-3 px-4 font-medium text-gray-900">Vicidial ID</th>
                   <th className="text-left py-3 px-4 font-medium text-gray-900">Role</th>
                   <th className="text-left py-3 px-4 font-medium text-gray-900">Status</th>
                   <th className="text-left py-3 px-4 font-medium text-gray-900">Last Login</th>
@@ -349,6 +352,28 @@ const AgentManagement = () => {
                         <div>
                           <div className="font-medium text-gray-900">{agent.name}</div>
                           <div className="text-sm text-gray-600">{agent.email}</div>
+                        </div>
+                      )}
+                    </td>
+                    <td className="py-4 px-4">
+                      {editingAgent === agent._id ? (
+                        <input
+                          type="text"
+                          value={editFormData.vicidialAgentId}
+                          onChange={(e) => setEditFormData({ ...editFormData, vicidialAgentId: e.target.value })}
+                          className="w-full px-2 py-1 border border-gray-300 rounded focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                          placeholder="Vicidial Agent ID"
+                        />
+                      ) : (
+                        <div className="flex items-center">
+                          {agent.vicidialAgentId ? (
+                            <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-indigo-100 text-indigo-700">
+                              <Phone size={12} className="mr-1" />
+                              {agent.vicidialAgentId}
+                            </span>
+                          ) : (
+                            <span className="text-xs text-gray-400">Not mapped</span>
+                          )}
                         </div>
                       )}
                     </td>

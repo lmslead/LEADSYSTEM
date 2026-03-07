@@ -16,7 +16,7 @@ async function setupPersistentLeadsFeature() {
     console.log('STEP 1: Verifying current database state...');
     await verifyDatabaseForPersistentLeads();
     
-    console.log('\n' + '='.repeat(60));
+    console.log('\n' + '='.repeat(60));                   
     
     // Step 2: Ask user if they want to proceed with migration
     console.log('\nSTEP 2: Database Migration');
@@ -60,7 +60,7 @@ async function setupPersistentLeadsFeature() {
     throw error;
   }
 }
-
+                 
 // Handle script execution
 if (require.main === module) {
   setupPersistentLeadsFeature()
