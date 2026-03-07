@@ -204,6 +204,122 @@ router.post('/call-data', async (req, res) => {
 });
 
 // ============================================================
+// GET /api/vicidial/call-data
+// PUBLIC endpoint — Vicidial URL push via query string (no auth)
+// Accepts all fields as URL query parameters
+// e.g. /api/vicidial/call-data?agent_id=4013&phone_number=1234567890&...
+// ============================================================
+router.get('/call-data', async (req, res) => {
+  try {
+    const payload = req.query;
+
+    console.log('[Vicidial GET] Received call-data query params:', JSON.stringify(payload).substring(0, 500));
+
+    const vicidialAgentId = (
+      payload.agent_id || payload.agentId || payload.user || payload.agent || ''
+    ).toString().trim();
+
+    if (!vicidialAgentId) {
+      return res.status(400).json({ success: false, message: 'agent_id is required' });
+    }
+
+    const phoneNumber = (
+      payload.phone_number || payload.phoneNumber || payload.phone || payload.called || ''
+    ).toString().trim();
+
+    const callType = (
+      payload.call_type || payload.callType || payload.type || 'inbound'
+    ).toString().trim().toLowerCase();
+
+    const firstName = (payload.first_name || payload.firstName || '').toString().trim();
+    const lastName = (payload.last_name || payload.lastName || '').toString().trim();
+    const callerName = (
+      payload.caller_name || payload.callerName || payload.full_name ||
+      [firstName, lastName].filter(Boolean).join(' ') || ''
+    ).trim();
+
+    const callId = (
+      payload.call_id || payload.callId || payload.uniqueid || payload.call_uuid || ''
+    ).toString().trim();
+
+    const campaignName = (
+      payload.campaign || payload.campaignName || payload.campaign_id || ''
+    ).toString().trim();
+
+    const agent = await User.findOne({
+      vicidialAgentId: vicidialAgentId,
+      isActive: true,
+    }).populate('organization');
+
+    const callData = {
+      vicidialAgentId,
+      phoneNumber,
+      callerName: callerName || undefined,
+      firstName: firstName || undefined,
+      lastName: lastName || undefined,
+      email: (payload.email || '').toString().trim() || undefined,
+      address: (payload.address1 || payload.address || '').toString().trim() || undefined,
+      city: (payload.city || '').toString().trim() || undefined,
+      state: (payload.state || '').toString().trim() || undefined,
+      zipcode: (payload.postal_code || payload.zipcode || payload.zip || '').toString().trim() || undefined,
+      callType: callType === 'outbound' ? 'outbound' : 'inbound',
+      callId: callId || undefined,
+      campaignName: campaignName || undefined,
+      listId: (payload.list_id || payload.listId || '').toString().trim() || undefined,
+      vendorLeadCode: (payload.vendor_lead_code || payload.vendorLeadCode || '').toString().trim() || undefined,
+      callStatus: (payload.status || payload.dispo || '').toString().trim() || undefined,
+      rawPayload: payload,
+      priority: callType === 'inbound' ? 'high' : 'normal',
+      queueStatus: 'pending',
+    };
+
+    if (agent) {
+      callData.agent = agent._id;
+      callData.organization = agent.organization?._id || agent.organization;
+    }
+
+    const vicidialCall = await VicidialCall.create(callData);
+
+    if (agent && req.io) {
+      const callPayload = {
+        _id: vicidialCall._id,
+        vicidialAgentId,
+        phoneNumber,
+        callerName: callerName || 'Unknown',
+        firstName,
+        lastName,
+        email: callData.email,
+        address: callData.address,
+        city: callData.city,
+        state: callData.state,
+        zipcode: callData.zipcode,
+        callType: callData.callType,
+        callId,
+        campaignName,
+        priority: callData.priority,
+        receivedAt: vicidialCall.receivedAt,
+      };
+
+      if (req.socketOptimizer) {
+        req.socketOptimizer.emitToUser(agent._id.toString(), 'agent1', 'vicidialCallData', callPayload);
+      } else {
+        req.io.emit('vicidialCallData', callPayload);
+      }
+    }
+
+    return res.status(200).json({
+      success: true,
+      message: agent ? 'Call data received and pushed to agent' : 'Call data received (agent not mapped)',
+      callId: vicidialCall._id,
+      agentMapped: !!agent,
+    });
+  } catch (error) {
+    console.error('Vicidial call-data GET error:', error);
+    return res.status(500).json({ success: false, message: 'Internal server error processing call data' });
+  }
+});
+
+// ============================================================
 // GET /api/vicidial/queue
 // Get pending call queue for the logged-in agent
 // Protected — requires auth
