@@ -26,22 +26,21 @@ const Layout = ({ onDashboardRefresh }) => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Copy-paste restriction for admin, agent1, agent2
+  // Prevent copying FROM the dashboard for all non-superadmin roles.
+  // Paste INTO the dashboard is intentionally allowed.
   useEffect(() => {
-    const restrictedRoles = ['admin', 'agent1', 'agent2'];
+    const restrictedRoles = ['admin', 'agent1', 'agent2', 'restricted_admin'];
     if (!user || !restrictedRoles.includes(user.role)) return;
 
     const block = (e) => e.preventDefault();
 
     document.addEventListener('copy', block);
     document.addEventListener('cut', block);
-    document.addEventListener('paste', block);
     document.addEventListener('contextmenu', block);
 
     return () => {
       document.removeEventListener('copy', block);
       document.removeEventListener('cut', block);
-      document.removeEventListener('paste', block);
       document.removeEventListener('contextmenu', block);
     };
   }, [user]);
