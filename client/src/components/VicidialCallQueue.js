@@ -56,26 +56,49 @@ const VicidialCallQueue = ({ onLoadCallData }) => {
   // Listen for real-time vicidial call data
   useEffect(() => {
     const handleNewCall = (callData) => {
-      toast(`📞 New ${callData.callType || 'inbound'} call from ${callData.callerName || callData.phoneNumber || 'Unknown'}`, {
+      toast(`📞 New ${callData.callType || 'inbound'} call from ${callData.callerName || callData.phoneNumber || 'Unknown'} – opening form…`, {
         duration: 5000,
         icon: callData.callType === 'inbound' ? '📥' : '📤',
       });
 
-      // Add to local queue immediately
-      setQueue(prev => {
-        const updated = [...prev, callData];
-        // Sort: high priority first, then by receivedAt
-        updated.sort((a, b) => {
-          if (a.priority === 'high' && b.priority !== 'high') return -1;
-          if (a.priority !== 'high' && b.priority === 'high') return 1;
-          return new Date(a.receivedAt) - new Date(b.receivedAt);
-        });
-        return updated;
-      });
-      setQueueCount(prev => prev + 1);
+      // Build form-compatible data
+      const autoFormData = {
+        name: callData.callerName || [callData.firstName, callData.lastName].filter(Boolean).join(' ') || '',
+        phone: callData.phoneNumber || '',
+        email: callData.email || '',
+        address: callData.address || '',
+        city: callData.city || '',
+        state: callData.state || '',
+        zipcode: callData.zipcode || '',
+        _vicidialCallId: callData._id,
+        _vicidialCallType: callData.callType,
+        _vicidialCampaign: callData.campaignName,
+      };
 
-      // Auto-expand queue panel when a new call arrives
-      setExpanded(true);
+      // Mark the call as active in the backend (non-blocking)
+      if (callData._id) {
+        axios.put(`/api/vicidial/queue/${callData._id}/activate`).catch(err =>
+          console.error('Failed to activate vicidial call:', err)
+        );
+      }
+
+      // Auto-open the Add Lead form in the parent with pre-filled data
+      if (onLoadCallData) {
+        onLoadCallData(autoFormData);
+      } else {
+        // Fallback: add to queue so agent can load manually
+        setQueue(prev => {
+          const updated = [...prev, callData];
+          updated.sort((a, b) => {
+            if (a.priority === 'high' && b.priority !== 'high') return -1;
+            if (a.priority !== 'high' && b.priority === 'high') return 1;
+            return new Date(a.receivedAt) - new Date(b.receivedAt);
+          });
+          return updated;
+        });
+        setQueueCount(prev => prev + 1);
+        setExpanded(true);
+      }
     };
 
     const handleQueueUpdate = (data) => {

@@ -147,8 +147,10 @@ const Agent1Dashboard = () => {
   const [gtiDispositionState, setGtiDispositionState] = useState({ ...INITIAL_GTI_DISPOSITION_STATE });
 
   const hasSelectedGtiDisposition = Boolean((gtiDispositionState.dispositionReason || '').trim());
-  const primaryActionLabel = hasSelectedGtiDisposition ? 'Dispose Lead' : 'Add Lead';
-  const primaryActionBusyLabel = hasSelectedGtiDisposition ? 'Disposing Lead...' : 'Adding Lead...';
+  // When a disposition is selected all options hang up the call in Vicidial.
+  // "Keep lead active" (empty) keeps the lead alive and routes it to Agent 2.
+  const primaryActionLabel = hasSelectedGtiDisposition ? 'Dispose Lead & Hangup' : 'Add Lead';
+  const primaryActionBusyLabel = hasSelectedGtiDisposition ? 'Disposing & Hanging Up...' : 'Adding Lead...';
 
   const resetGtiDispositionState = useCallback(() => {
     setGtiDispositionState({ ...INITIAL_GTI_DISPOSITION_STATE });
@@ -657,15 +659,39 @@ const Agent1Dashboard = () => {
         dispositionReason: ''
       });
       
-      // If this was from a Vicidial call, mark it complete
+      // If this was from a Vicidial call:
+      //   - disposing (any disposition chosen)  → call hangup API to hang up + stamp disposition in Vicidial
+      //   - keeping active (no disposition)     → skip hangup, lead will be assigned to Agent 2
       if (activeVicidialCallId) {
+        if (shouldDisposeLead) {
+          // Resolve the exact code to send — strip the description suffix if present
+          // e.g. "SALE - Sale Made" → "SALE", "A - Answering Machine" → "A"
+          const dispositionToSend =
+            gtiDispositionState.dispositionReason === 'Other'
+              ? (gtiDispositionState.customReason.trim() || 'Other')
+              : selectedDisposition;
+
+          try {
+            const hangupRes = await axios.post('/api/vicidial/hangup', {
+              callId:      activeVicidialCallId,
+              disposition: dispositionToSend,
+            });
+            if (hangupRes.data?.warning) {
+              toast(hangupRes.data.warning, { duration: 7000, icon: '⚠️' });
+            }
+          } catch (hangupErr) {
+            console.error('Vicidial hangup call failed:', hangupErr);
+            toast('⚠️ Lead saved but Vicidial hangup signal failed. Please hang up manually.', { duration: 7000 });
+          }
+        }
+
+        // Always mark the LMS call record as complete and link the created lead
         try {
           await axios.put(`/api/vicidial/queue/${activeVicidialCallId}/complete`, {
             leadId: createdLead?._id,
           });
         } catch (vcErr) {
           console.error('Failed to mark vicidial call complete:', vcErr);
-          // Non-blocking — lead was already created successfully
         }
         setActiveVicidialCallId(null);
       }
@@ -677,7 +703,7 @@ const Agent1Dashboard = () => {
       
       const leadWasDisposed = shouldDisposeLead || createdLead?.isDisposed;
       if (!leadWasDisposed && createdLead) {
-        // Automatically open assign modal with the newly created lead
+        // Lead is active — automatically open assign modal to route to Agent 2
         await openAssignModal(createdLead);
       }
     } catch (error) {

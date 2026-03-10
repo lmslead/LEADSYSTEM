@@ -676,4 +676,109 @@ router.get('/admin/agent-mappings', protect, authorize('admin', 'superadmin'), a
   }
 });
 
+// ============================================================
+// POST /api/vicidial/hangup
+// Hang up the active Vicidial call and stamp a disposition code.
+// Called by the LMS after the agent disposes a lead.
+//
+// Body: { callId: "<VicidialCall._id>", disposition: "<LMS label>" }
+//
+// The LMS disposition label is automatically mapped to the Vicidial
+// short code, e.g. "SALE - Sale Made" → "SALE", "A - Answering Machine" → "A".
+// Protected — requires auth
+// ============================================================
+router.post('/hangup', protect, authorize('agent1', 'admin', 'superadmin'), async (req, res) => {
+  try {
+    const { callId, disposition } = req.body;
+
+    if (!disposition || !String(disposition).trim()) {
+      return res.status(400).json({ success: false, message: 'disposition is required' });
+    }
+
+    // Extract short Vicidial code from LMS label, e.g. "SALE - Sale Made" → "SALE"
+    const rawDisposition = String(disposition).trim();
+    const vicidialCode = rawDisposition.includes(' - ')
+      ? rawDisposition.split(' - ')[0].trim()
+      : rawDisposition;
+
+    // Resolve vicidialAgentId: call record first, then user profile fallback
+    let vicidialAgentId = req.user.vicidialAgentId;
+    if (callId) {
+      const callRecord = await VicidialCall.findOne({ _id: callId }).lean();
+      if (callRecord?.vicidialAgentId) vicidialAgentId = callRecord.vicidialAgentId;
+    }
+
+    if (!vicidialAgentId) {
+      return res.status(400).json({
+        success: false,
+        message: 'No Vicidial agent ID is linked to your account. Ask an admin to configure it.',
+      });
+    }
+
+    const baseUrl = process.env.VICIDIAL_HANGUP_URL || 'http://172.16.1.20/VLC_API/hangup_api.php';
+    const fullUrl = `${baseUrl}?agent_user=${encodeURIComponent(vicidialAgentId)}&disposition=${encodeURIComponent(vicidialCode)}`;
+
+    // Fire HTTP GET to Vicidial server (internal network — use Node built-in http, no extra deps)
+    let vicidialResponseText = '';
+    let vicidialReachable = false;
+
+    await new Promise((resolve) => {
+      const http = require('http');
+      try {
+        const urlObj = new URL(fullUrl);
+        const options = {
+          hostname: urlObj.hostname,
+          port:     urlObj.port || 80,
+          path:     urlObj.pathname + urlObj.search,
+          method:   'GET',
+          timeout:  8000,
+        };
+
+        const request = http.request(options, (response) => {
+          let data = '';
+          response.on('data', (chunk) => { data += chunk; });
+          response.on('end',  ()      => {
+            vicidialResponseText = data.trim();
+            vicidialReachable = true;
+            resolve();
+          });
+        });
+
+        request.on('error',   (err) => { vicidialResponseText = `ERROR: ${err.message}`;    resolve(); });
+        request.on('timeout', ()    => { vicidialResponseText = 'ERROR: request timed out'; request.destroy(); resolve(); });
+        request.end();
+      } catch (parseErr) {
+        vicidialResponseText = `ERROR: invalid URL — ${parseErr.message}`;
+        resolve();
+      }
+    });
+
+    console.log(
+      `[Vicidial Hangup] agent_user=${vicidialAgentId} dispo=${vicidialCode} ` +
+      `reached=${vicidialReachable} response="${vicidialResponseText}"`
+    );
+
+    // Persist the applied Vicidial disposition code on the call record
+    if (callId) {
+      await VicidialCall.findOneAndUpdate(
+        { _id: callId, agent: req.user._id },
+        { callStatus: vicidialCode }
+      ).catch((e) => console.error('[Vicidial Hangup] Failed to update call record:', e));
+    }
+
+    const responseBody = {
+      success: true,
+      data: { vicidialAgentId, vicidialCode, vicidialReachable, vicidialResponse: vicidialResponseText },
+    };
+    if (!vicidialReachable) {
+      responseBody.warning =
+        'Vicidial hangup API was unreachable — lead saved in LMS but call was NOT hung up through Vicidial.';
+    }
+    return res.status(200).json(responseBody);
+  } catch (error) {
+    console.error('[Vicidial Hangup] Route error:', error);
+    return res.status(500).json({ success: false, message: 'Internal server error during hangup' });
+  }
+});
+
 module.exports = router;

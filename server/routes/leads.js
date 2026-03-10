@@ -1482,7 +1482,7 @@ router.post('/', protect, createLeadValidation, handleValidationErrors, async (r
     const isGtiOrg = isGtiOrganizationName(organizationName);
     const dispositionText = typeof req.body.disposition1 === 'string' ? req.body.disposition1.trim() : '';
     const hasDisposition = dispositionText.length > 0;
-    const shouldDisposeLead = Boolean(isGtiOrg && hasDisposition);
+    const shouldDisposeLead = Boolean(hasDisposition && req.body.isDisposed === true);
 
     if ((req.body.isDisposed || shouldDisposeLead) && !hasDisposition) {
       return res.status(400).json({
@@ -1491,13 +1491,8 @@ router.post('/', protect, createLeadValidation, handleValidationErrors, async (r
       });
     }
 
+    // draftDate is a GTI-only field
     if (isGtiOrg) {
-      if (shouldDisposeLead) {
-        leadData.disposition1 = dispositionText;
-      } else {
-        delete leadData.disposition1;
-      }
-
       if (req.body.draftDate) {
         const parsedDraftDate = parseDraftDateInput(req.body.draftDate);
         if (!parsedDraftDate) {
@@ -1510,21 +1505,21 @@ router.post('/', protect, createLeadValidation, handleValidationErrors, async (r
       } else {
         delete leadData.draftDate;
       }
+    } else {
+      delete leadData.draftDate;
+    }
 
-      if (shouldDisposeLead) {
-        leadData.isDisposed = true;
-        leadData.disposedBy = req.user._id;
-        leadData.status = 'Dead';
-        delete leadData.assignedTo;
-        delete leadData.assignedBy;
-        delete leadData.assignedAt;
-      } else {
-        leadData.isDisposed = false;
-        delete leadData.disposedBy;
-      }
+    // Disposal logic applies to all orgs
+    if (shouldDisposeLead) {
+      leadData.disposition1 = dispositionText;
+      leadData.isDisposed = true;
+      leadData.disposedBy = req.user._id;
+      leadData.status = 'Dead';
+      delete leadData.assignedTo;
+      delete leadData.assignedBy;
+      delete leadData.assignedAt;
     } else {
       delete leadData.disposition1;
-      delete leadData.draftDate;
       leadData.isDisposed = false;
       delete leadData.disposedBy;
     }
