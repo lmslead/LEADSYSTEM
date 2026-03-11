@@ -1,4 +1,4 @@
-import React, { createContext, useContext, useEffect, useRef } from 'react';
+import React, { createContext, useContext, useEffect, useRef, useState, useCallback } from 'react';
 import { io } from 'socket.io-client';
 import { apiBaseURL } from '../utils/axios';
 import { useAuth } from './AuthContext';
@@ -9,6 +9,7 @@ const SocketContext = createContext();
 export const SocketProvider = ({ children }) => {
   const socket = useRef(null);
   const { user, isAuthenticated } = useAuth();
+  const [isConnected, setIsConnected] = useState(false);
 
   useEffect(() => {
     if (isAuthenticated && user) {
@@ -37,14 +38,17 @@ export const SocketProvider = ({ children }) => {
       // Socket event listeners
       socket.current.on('connect', () => {
         console.log('Socket connected to server');
+        setIsConnected(true);
       });
 
       socket.current.on('disconnect', (reason) => {
         console.log('Socket disconnected:', reason);
+        setIsConnected(false);
       });
 
       socket.current.on('connect_error', (error) => {
         console.error('Socket connection error:', error);
+        setIsConnected(false);
       });
 
       // Lead events
@@ -110,6 +114,7 @@ export const SocketProvider = ({ children }) => {
           if (socket.current) {
             socket.current.disconnect();
           }
+          setIsConnected(false);
         };
       } catch (error) {
         console.error('Error initializing socket connection:', error);
@@ -117,27 +122,29 @@ export const SocketProvider = ({ children }) => {
     }
   }, [isAuthenticated, user]);
 
-  // Socket methods
-  const emitEvent = (event, data) => {
+  // Socket methods — useCallback with isConnected dep ensures consumers
+  // re-run their effects once the socket is actually connected.
+  const emitEvent = useCallback((event, data) => {
     if (socket.current) {
       socket.current.emit(event, data);
     }
-  };
+  }, [isConnected]);
 
-  const onEvent = (event, callback) => {
+  const onEvent = useCallback((event, callback) => {
     if (socket.current) {
       socket.current.on(event, callback);
     }
-  };
+  }, [isConnected]);
 
-  const offEvent = (event, callback) => {
+  const offEvent = useCallback((event, callback) => {
     if (socket.current) {
       socket.current.off(event, callback);
     }
-  };
+  }, [isConnected]);
 
   const value = {
     socket: socket.current,
+    isConnected,
     emitEvent,
     onEvent,
     offEvent
