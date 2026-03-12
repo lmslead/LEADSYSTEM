@@ -1,5 +1,5 @@
-                                                                                         
-/**module.exports = {
+                                                                                           
+module.exports = {
   apps: [
     {
       name: "lms-backend",
@@ -29,4 +29,5 @@
   ]
 };
 
-*/
+
+
