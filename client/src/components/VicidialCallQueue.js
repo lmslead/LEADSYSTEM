@@ -11,8 +11,10 @@ import { useSocket } from '../contexts/SocketContext';
  *   onLoadCallData(callData) — called when agent clicks "Load" on a queued call.
  *                               The parent (Agent1Dashboard) opens the Add Lead form
  *                               with pre-populated data.
+ *   isFormActive — boolean indicating if the Add Lead form is currently open.
+ *                  Prevents auto-opening multiple forms simultaneously.
  */
-const VicidialCallQueue = ({ onLoadCallData }) => {
+const VicidialCallQueue = ({ onLoadCallData, isFormActive }) => {
   const [queue, setQueue] = useState([]);
   const [queueCount, setQueueCount] = useState(0);
   const [loading, setLoading] = useState(false);
@@ -55,12 +57,12 @@ const VicidialCallQueue = ({ onLoadCallData }) => {
 
   // Listen for real-time vicidial call data
   useEffect(() => {
+    console.log('🔌 Setting up ViciDial socket listeners (REAL-TIME mode)...');
+    
     const handleNewCall = (callData) => {
-      toast(`📞 New ${callData.callType || 'inbound'} call from ${callData.callerName || callData.phoneNumber || 'Unknown'} – opening form…`, {
-        duration: 5000,
-        icon: callData.callType === 'inbound' ? '📥' : '📤',
-      });
-
+      console.log('📞 ViciDial REAL-TIME call received:', callData);
+      console.log('🎯 ViciDial workflow: Agent answered call → Data sent to LMS → Auto-opening form');
+      
       // Build form-compatible data
       const autoFormData = {
         name: callData.callerName || [callData.firstName, callData.lastName].filter(Boolean).join(' ') || '',
@@ -75,6 +77,16 @@ const VicidialCallQueue = ({ onLoadCallData }) => {
         _vicidialCampaign: callData.campaignName,
       };
 
+      // ALWAYS auto-open when ViciDial sends data
+      // Reason: ViciDial only sends data for the call the agent is currently on
+      // Agent can only be on 1 call at a time. If previous form is open, this is a new call.
+      console.log('✅ Auto-opening form with live call data (agent is on call NOW)');
+      
+      toast(`📞 Live call from ${callData.callerName || callData.phoneNumber || 'Unknown'} – loading form…`, {
+        duration: 4000,
+        icon: callData.callType === 'inbound' ? '📥' : '📤',
+      });
+
       // Mark the call as active in the backend (non-blocking)
       if (callData._id) {
         axios.put(`/api/vicidial/queue/${callData._id}/activate`).catch(err =>
@@ -83,9 +95,11 @@ const VicidialCallQueue = ({ onLoadCallData }) => {
       }
 
       // Auto-open the Add Lead form in the parent with pre-filled data
+      // This will replace any existing form since agent can only be on 1 call at a time
       if (onLoadCallData) {
         onLoadCallData(autoFormData);
       } else {
+        console.warn('⚠️ onLoadCallData callback not provided, adding to queue');
         // Fallback: add to queue so agent can load manually
         setQueue(prev => {
           const updated = [...prev, callData];
@@ -102,6 +116,7 @@ const VicidialCallQueue = ({ onLoadCallData }) => {
     };
 
     const handleQueueUpdate = (data) => {
+      console.log('📊 Queue update received:', data);
       setQueueCount(data.count || 0);
       // Refetch to sync
       fetchQueue();
@@ -110,6 +125,7 @@ const VicidialCallQueue = ({ onLoadCallData }) => {
     if (onEvent) {
       onEvent('vicidialCallData', handleNewCall);
       onEvent('vicidialQueueUpdate', handleQueueUpdate);
+      console.log('✅ Socket listeners registered for ViciDial events');
     }
 
     return () => {
@@ -118,7 +134,7 @@ const VicidialCallQueue = ({ onLoadCallData }) => {
         offEvent('vicidialQueueUpdate', handleQueueUpdate);
       }
     };
-  }, [onEvent, offEvent, fetchQueue]);
+  }, [onEvent, offEvent, fetchQueue, onLoadCallData]);
 
   // When user expands the panel, fetch fresh data
   useEffect(() => {

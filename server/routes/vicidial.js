@@ -177,6 +177,9 @@ router.post('/call-data', async (req, res) => {
         receivedAt: vicidialCall.receivedAt,
       };
 
+      console.log(`🔥 Real-time ViciDial call: Agent ${agent.name} answered call from ${phoneNumber}`);
+      console.log(`📤 Pushing call data to agent via socket (will auto-open form in LMS)...`);
+
       // Use socketOptimizer to emit to the specific agent
       if (req.socketOptimizer) {
         // Try agent1 role first, then agent2
@@ -300,6 +303,9 @@ router.get('/call-data', async (req, res) => {
         receivedAt: vicidialCall.receivedAt,
       };
 
+      console.log('🔥 Real-time ViciDial call (GET) for agent:', vicidialAgentId);
+      console.log('📤 Pushing call data to agent via socket:', agent.email);
+
       if (req.socketOptimizer) {
         req.socketOptimizer.emitToUser(agent._id.toString(), 'agent1', 'vicidialCallData', callPayload);
       } else {
@@ -376,6 +382,52 @@ router.get('/queue/count', protect, authorize('agent1', 'admin', 'superadmin'), 
 });
 
 // ============================================================
+// GET /api/vicidial/queue/next
+// Get next pending call from queue for auto-loading
+// Protected — requires auth
+// ============================================================
+router.get('/queue/next', protect, authorize('agent1', 'admin', 'superadmin'), async (req, res) => {
+  try {
+    console.log('🔍 Fetching next ViciDial call for user:', req.user._id);
+    
+    // Find the next pending call (oldest first, high priority first)
+    const nextCall = await VicidialCall.findOne({
+      agent: req.user._id,
+      queueStatus: 'pending',
+    })
+      .sort({ priority: -1, receivedAt: 1 }) // High priority first, then oldest first
+      .lean();
+
+    if (!nextCall) {
+      console.log('✅ No pending calls in queue');
+      return res.status(200).json({
+        success: true,
+        data: { call: null },
+        message: 'No pending calls',
+      });
+    }
+
+    console.log('📞 Found next call:', nextCall._id, nextCall.phoneNumber);
+
+    // Mark as active
+    await VicidialCall.findByIdAndUpdate(nextCall._id, {
+      queueStatus: 'active',
+    });
+
+    return res.status(200).json({
+      success: true,
+      data: { call: nextCall },
+    });
+  } catch (error) {
+    console.error('Vicidial queue next error:', error);
+    return res.status(500).json({
+      success: false,
+      message: 'Failed to fetch next call',
+    });
+  }
+});
+
+// ============================================================
 // PUT /api/vicidial/queue/:callId/activate
 // Mark a call as active (agent is filling form for it)
 // ============================================================
@@ -422,6 +474,8 @@ router.put('/queue/:callId/complete', protect, authorize('agent1', 'admin', 'sup
   try {
     const { leadId } = req.body;
 
+    console.log(`✅ Marking ViciDial call ${req.params.callId} as complete, leadId:`, leadId);
+
     const updateData = {
       queueStatus: 'completed',
       processedAt: new Date(),
@@ -449,11 +503,14 @@ router.put('/queue/:callId/complete', protect, authorize('agent1', 'admin', 'sup
     }
 
     // Notify the agent about updated queue count
+    const remainingCount = await VicidialCall.countDocuments({
+      agent: req.user._id,
+      queueStatus: { $in: ['pending', 'active'] },
+    });
+    
+    console.log(`📊 Remaining calls in queue: ${remainingCount}`);
+    
     if (req.socketOptimizer) {
-      const remainingCount = await VicidialCall.countDocuments({
-        agent: req.user._id,
-        queueStatus: { $in: ['pending', 'active'] },
-      });
       req.socketOptimizer.emitToUser(
         req.user._id.toString(),
         'agent1',

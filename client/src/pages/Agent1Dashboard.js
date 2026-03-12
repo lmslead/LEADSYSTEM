@@ -65,6 +65,8 @@ const Agent1Dashboard = () => {
   const [submitting, setSubmitting] = useState(false);
   // Vicidial call queue — tracks which call data is currently being used to fill form
   const [activeVicidialCallId, setActiveVicidialCallId] = useState(null);
+  // Track if form is currently active to prevent multiple forms from opening
+  const [isFormActive, setIsFormActive] = useState(false);
 
   // Pagination state
   const [pagination, setPagination] = useState({
@@ -176,7 +178,9 @@ const Agent1Dashboard = () => {
   };
 
   const closeCreateLeadModal = useCallback(() => {
+    console.log('🚪 Closing create lead modal');
     setShowForm(false);
+    setIsFormActive(false);
     setActiveVicidialCallId(null);
     resetGtiDispositionState();
     setFormErrors((prev) => ({ ...prev, dispositionReason: '' }));
@@ -184,24 +188,47 @@ const Agent1Dashboard = () => {
 
   // Handler for VicidialCallQueue — loads call data into the Add Lead form
   const handleVicidialCallLoad = useCallback((callData) => {
-    // Pre-fill form with Vicidial data
-    setFormData(prev => ({
-      ...prev,
-      name: callData.name || prev.name,
-      phone: callData.phone || prev.phone,
-      email: callData.email || prev.email,
-      address: callData.address || prev.address,
-      city: callData.city || prev.city,
-      state: callData.state || prev.state,
-      zipcode: callData.zipcode || prev.zipcode,
-    }));
+    console.log('🚀 handleVicidialCallLoad called with:', callData);
+    console.log('🎯 This is a LIVE CALL from ViciDial - agent is currently talking to customer');
+    
+    // Reset form data completely to ensure clean state for new call
+    setFormData({
+      name: callData.name || '',
+      email: callData.email || '',
+      phone: callData.phone || '',
+      alternatePhone: '',
+      debtCategory: 'unsecured',
+      debtTypes: [],
+      totalDebtAmount: '',
+      numberOfCreditors: '',
+      monthlyDebtPayment: '',
+      creditScore: '',
+      creditScoreRange: '',
+      address: callData.address || '',
+      city: callData.city || '',
+      state: callData.state || '',
+      zipcode: callData.zipcode || '',
+      notes: ''
+    });
+
+    // Clear any previous errors
+    setFormErrors({
+      phone: '',
+      alternatePhone: '',
+      dispositionReason: ''
+    });
+
+    // Reset disposition state
+    resetGtiDispositionState();
 
     // Track which vicidial call we are processing
     setActiveVicidialCallId(callData._vicidialCallId || null);
 
     // Open the Add Lead form
+    console.log('🚀 Opening form for live ViciDial call - showForm=true, isFormActive=true');
     setShowForm(true);
-  }, []);
+    setIsFormActive(true);
+  }, [resetGtiDispositionState]);
 
   const fetchLeads = useCallback(async (page = 1) => {
     try {
@@ -706,6 +733,14 @@ const Agent1Dashboard = () => {
         // Lead is active — automatically open assign modal to route to Agent 2
         await openAssignModal(createdLead);
       }
+
+      // NOTE: No auto-load next call logic needed here
+      // Reason: ViciDial controls the call flow in real-time
+      // When agent finishes current call and answers the NEXT call in ViciDial,
+      // ViciDial will send the next call's data via API/socket,
+      // which will trigger auto-popup immediately via socket event handler.
+      // This is the REAL-TIME flow - we don't need to poll or fetch from queue.
+      console.log('✅ Lead processed. Next call will auto-popup when agent answers it in ViciDial.');
     } catch (error) {
       console.error('Error creating lead:', error);
       console.error('Error response:', error.response);
@@ -1048,7 +1083,10 @@ const Agent1Dashboard = () => {
       </div>
 
       {/* Vicidial Call Queue */}
-      <VicidialCallQueue onLoadCallData={handleVicidialCallLoad} />
+      <VicidialCallQueue 
+        onLoadCallData={handleVicidialCallLoad} 
+        isFormActive={isFormActive}
+      />
 
       {/* Today's Lead Summary for Agent1 */}
       <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
