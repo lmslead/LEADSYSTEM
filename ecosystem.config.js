@@ -1,4 +1,4 @@
-  GNU nano 8.4                                                                                    ecosystem.config.js                                                                                              
+                                                                                         
 module.exports = {
   apps: [
     {
