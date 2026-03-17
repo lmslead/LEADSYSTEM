@@ -26,8 +26,6 @@ const GTI_DISPOSITION_OPTIONS = [
   'N - No Answer',
   'NI - Not Interested',
   'NP - No Pitch No Price',
-  'SALE - Sale Made',
-  'XFER - Call Transferred',
   'CB - Callback',
   'DA - Dead Air',
   'DOK - Debt Over 15K',
@@ -39,6 +37,8 @@ const GTI_DISPOSITION_OPTIONS = [
   'NIAP - Not Interested After Pitch',
   'NIBP - Not Interested Before Pitch',
   'NQ - Not Qualified',
+  'Ringing',
+  'Wrong Number',
   'Other'
 ];
 
@@ -157,16 +157,6 @@ const Agent1Dashboard = () => {
   const resetGtiDispositionState = useCallback(() => {
     setGtiDispositionState({ ...INITIAL_GTI_DISPOSITION_STATE });
   }, []);
-
-  const handleDispositionSelect = (event) => {
-    const value = event.target.value;
-    setGtiDispositionState((prev) => ({
-      ...prev,
-      dispositionReason: value,
-      customReason: value === 'Other' ? prev.customReason : ''
-    }));
-    setFormErrors((prev) => ({ ...prev, dispositionReason: '' }));
-  };
 
   const handleCustomDispositionChange = (event) => {
     const value = event.target.value;
@@ -1058,7 +1048,9 @@ const Agent1Dashboard = () => {
     totalLeads: todaysLeads.length,
     hotLeads: todaysLeads.filter(lead => lead.category === 'hot').length,
     warmLeads: todaysLeads.filter(lead => lead.category === 'warm').length,
-    coldLeads: todaysLeads.filter(lead => lead.category === 'cold').length
+    coldLeads: todaysLeads.filter(lead => lead.category === 'cold').length,
+    disposedLeads: todaysLeads.filter(lead => lead.isDisposed === true).length,
+    transferredLeads: todaysLeads.filter(lead => lead.assignedTo && !lead.isDisposed).length
   };
 
   if (loading) {
@@ -1100,51 +1092,43 @@ const Agent1Dashboard = () => {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4">
+        <div className="bg-white p-4 rounded-lg shadow-sm border border-gray-200">
           <div className="flex items-center">
-            <div className="p-3 rounded-full bg-primary-100">
-              <Users className="h-6 w-6 text-primary-600" />
+            <div className="p-2 rounded-full bg-primary-100">
+              <Users className="h-5 w-5 text-primary-600" />
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Total Leads</p>
+            <div className="ml-3">
+              <p className="text-xs font-medium text-gray-600">Total Leads</p>
               <p className="text-2xl font-bold text-gray-900">{filteredStats.totalLeads}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+        <div className="bg-white p-4 rounded-lg shadow-sm border border-orange-200">
           <div className="flex items-center">
-            <div className="p-3 rounded-full bg-red-100">
-              <TrendingUp className="h-6 w-6 text-red-600" />
+            <div className="p-2 rounded-full bg-orange-100">
+              <svg className="h-5 w-5 text-orange-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M18.364 18.364A9 9 0 005.636 5.636m12.728 12.728A9 9 0 015.636 5.636m12.728 12.728L5.636 5.636" />
+              </svg>
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Hot Leads</p>
-              <p className="text-2xl font-bold text-gray-900">{filteredStats.hotLeads}</p>
+            <div className="ml-3">
+              <p className="text-xs font-medium text-gray-600">Disposed</p>
+              <p className="text-2xl font-bold text-orange-700">{filteredStats.disposedLeads}</p>
             </div>
           </div>
         </div>
 
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
+        <div className="bg-white p-4 rounded-lg shadow-sm border border-emerald-200">
           <div className="flex items-center">
-            <div className="p-3 rounded-full bg-yellow-100">
-              <Calendar className="h-6 w-6 text-yellow-600" />
+            <div className="p-2 rounded-full bg-emerald-100">
+              <svg className="h-5 w-5 text-emerald-600" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+              </svg>
             </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Warm Leads</p>
-              <p className="text-2xl font-bold text-gray-900">{filteredStats.warmLeads}</p>
-            </div>
-          </div>
-        </div>
-
-        <div className="bg-white p-6 rounded-lg shadow-sm border border-gray-200">
-          <div className="flex items-center">
-            <div className="p-3 rounded-full bg-blue-100">
-              <Users className="h-6 w-6 text-blue-600" />
-            </div>
-            <div className="ml-4">
-              <p className="text-sm font-medium text-gray-600">Cold Leads</p>
-              <p className="text-2xl font-bold text-gray-900">{filteredStats.coldLeads}</p>
+            <div className="ml-3">
+              <p className="text-xs font-medium text-gray-600">Transferred</p>
+              <p className="text-2xl font-bold text-emerald-700">{filteredStats.transferredLeads}</p>
             </div>
           </div>
         </div>
@@ -1174,12 +1158,6 @@ const Agent1Dashboard = () => {
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Financial Info
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Category
-                </th>
-                <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
-                  Status
                 </th>
                 <th className="px-6 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider">
                   Duplicate
@@ -1254,12 +1232,6 @@ const Agent1Dashboard = () => {
                     </div>
                   </td>
                   <td className="px-6 py-4 whitespace-nowrap">
-                    {getCategoryBadge(lead.category, lead.completionPercentage)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
-                    {getStatusBadge(lead.status)}
-                  </td>
-                  <td className="px-6 py-4 whitespace-nowrap">
                     {lead.isDuplicate ? (
                       <div className="text-sm">
                         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium bg-yellow-100 text-yellow-800">
@@ -1332,7 +1304,7 @@ const Agent1Dashboard = () => {
               })}
               {leads.length === 0 && (
                 <tr>
-                  <td colSpan="10" className="px-6 py-8 text-center text-gray-500">
+                  <td colSpan="8" className="px-6 py-8 text-center text-gray-500">
                     No leads found. Create your first lead to get started!
                   </td>
                 </tr>
@@ -1358,16 +1330,13 @@ const Agent1Dashboard = () => {
 
       {/* Add Lead Modal - Modern Redesigned */}
       {showForm && (
-        <div className="fixed inset-0 z-50 overflow-y-auto">
-          <div className="flex items-center justify-center min-h-screen pt-4 px-4 pb-20 text-center sm:block sm:p-0">
-            <div className="fixed inset-0 transition-opacity" aria-hidden="true">
-              <div 
-                className="absolute inset-0 bg-black bg-opacity-50"
-                onClick={closeCreateLeadModal}
-              ></div>
-            </div>
+        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-2 sm:p-4">
+          <div
+            className="absolute inset-0 bg-black bg-opacity-50"
+            onClick={closeCreateLeadModal}
+          />
 
-            <div className="inline-block align-bottom bg-white rounded-xl text-left overflow-hidden shadow-2xl transform transition-all sm:my-8 sm:align-middle sm:max-w-6xl sm:w-full">
+            <div className="relative bg-white rounded-xl text-left shadow-2xl transform transition-all w-full max-w-6xl my-2 sm:my-6">
               <form onSubmit={handleSubmit}>
                 {/* Header */}
                 <div className="bg-gradient-to-r from-primary-600 to-primary-700 px-6 py-4">
@@ -1391,11 +1360,11 @@ const Agent1Dashboard = () => {
 
 
                 {/* Form Content - Two Column Layout */}
-                <div className="bg-white p-6">
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
+                <div className="bg-white p-3 sm:p-6 overflow-y-auto">
+                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8">
                     
                     {/* Left Column - Personal & Contact Information */}
-                    <div className="space-y-5">
+                    <div className="space-y-3 sm:space-y-5">
                       <div className="border-b border-gray-200 pb-2 mb-4">
                         <h4 className="text-lg font-semibold text-gray-900 flex items-center">
                           <svg className="w-5 h-5 text-primary-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1559,7 +1528,7 @@ const Agent1Dashboard = () => {
                     </div>
 
                     {/* Right Column - Financial & Debt Information */}
-                    <div className="space-y-5">
+                    <div className="space-y-3 sm:space-y-5">
                       <div className="border-b border-gray-200 pb-2 mb-4">
                         <h4 className="text-lg font-semibold text-gray-900 flex items-center">
                           <svg className="w-5 h-5 text-primary-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
@@ -1723,7 +1692,7 @@ const Agent1Dashboard = () => {
                     </div>
                   </div>
 
-                  <div className="mt-8 border-t border-gray-200 pt-6">
+                  <div className="mt-4 sm:mt-8 border-t border-gray-200 pt-4 sm:pt-6">
                       <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
                         <div>
                           <p className="text-base font-semibold text-gray-900">Disposition Reason</p>
@@ -1741,22 +1710,44 @@ const Agent1Dashboard = () => {
                           <label className="block text-sm font-semibold text-gray-700 mb-2">
                             Disposition Reason
                           </label>
-                          <select
-                            value={gtiDispositionState.dispositionReason}
-                            onChange={handleDispositionSelect}
-                            className={`w-full px-4 py-3 border rounded-lg focus:ring-2 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white ${
-                              formErrors.dispositionReason
-                                ? 'border-red-300 focus:ring-red-500'
-                                : 'border-gray-200 focus:ring-primary-500'
+                          {/* Keep Lead Active (Transfer) button — always visible */}
+                          <button
+                            type="button"
+                            onClick={() => setGtiDispositionState(prev => ({ ...prev, dispositionReason: '', customReason: '' }))}
+                            className={`mb-3 inline-flex items-center gap-2 px-4 py-2 rounded-lg border-2 text-sm font-semibold transition-all duration-150 ${
+                              !gtiDispositionState.dispositionReason
+                                ? 'border-emerald-500 bg-emerald-500 text-white shadow-md ring-2 ring-emerald-300'
+                                : 'border-emerald-400 bg-white text-emerald-700 hover:bg-emerald-50'
                             }`}
                           >
-                            <option value="">Keep lead active</option>
-                            {GTI_DISPOSITION_OPTIONS.map((option) => (
-                              <option key={option} value={option}>
-                                {option}
-                              </option>
-                            ))}
-                          </select>
+                            <svg xmlns="http://www.w3.org/2000/svg" className="h-4 w-4" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+                              <path strokeLinecap="round" strokeLinejoin="round" d="M8 7h12m0 0l-4-4m4 4l-4 4m0 6H4m0 0l4 4m-4-4l4-4" />
+                            </svg>
+                            Keep Lead Active (Transfer)
+                          </button>
+                          {/* 3-column grid matching call disposition layout */}
+                          <div className="bg-green-100 border border-green-300 rounded-lg p-3">
+                            <p className="text-xs font-bold text-gray-700 uppercase tracking-wide mb-2">Call Disposition</p>
+                            <div className="grid grid-cols-2 sm:grid-cols-3 gap-x-2 sm:gap-x-4 gap-y-1">
+                              {GTI_DISPOSITION_OPTIONS.map((option) => (
+                                <button
+                                  key={option}
+                                  type="button"
+                                  onClick={() => {
+                                    setGtiDispositionState(prev => ({ ...prev, dispositionReason: option, customReason: '' }));
+                                    setFormErrors(prev => ({ ...prev, dispositionReason: '' }));
+                                  }}
+                                  className={`text-left text-sm px-1 py-0.5 rounded underline font-medium transition-colors ${
+                                    gtiDispositionState.dispositionReason === option
+                                      ? 'bg-green-600 text-white no-underline rounded px-2'
+                                      : 'text-blue-700 hover:text-blue-900 hover:bg-green-200'
+                                  }`}
+                                >
+                                  {option}
+                                </button>
+                              ))}
+                            </div>
+                          </div>
                           {formErrors.dispositionReason && (
                             <p className="mt-1 text-sm text-red-600">{formErrors.dispositionReason}</p>
                           )}
@@ -1822,7 +1813,6 @@ const Agent1Dashboard = () => {
                 </div>
               </form>
             </div>
-          </div>
         </div>
       )}
 

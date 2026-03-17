@@ -344,7 +344,12 @@ router.put('/profile', protect, [
     .optional()
     .isEmail()
     .normalizeEmail()
-    .withMessage('Please enter a valid email')
+    .withMessage('Please enter a valid email'),
+  body('vicidialAgentId')
+    .optional({ checkFalsy: false })
+    .trim()
+    .isLength({ max: 50 })
+    .withMessage('Vicidial Agent ID cannot exceed 50 characters')
 ], handleValidationErrors, async (req, res) => {
   try {
     const { name, email } = req.body;
@@ -363,6 +368,27 @@ router.put('/profile', protect, [
     }
 
     if (name) user.name = name;
+
+    // Allow agents to self-manage their Vicidial Agent ID
+    if (typeof req.body.vicidialAgentId !== 'undefined' && ['agent1', 'agent2'].includes(user.role)) {
+      const trimmedViciId = (req.body.vicidialAgentId || '').toString().trim();
+      if (trimmedViciId) {
+        // Ensure no other user already has this ID
+        const existingViciUser = await User.findOne({
+          vicidialAgentId: trimmedViciId,
+          _id: { $ne: user._id }
+        });
+        if (existingViciUser) {
+          return res.status(400).json({
+            success: false,
+            message: `Vicidial Agent ID "${trimmedViciId}" is already assigned to another agent`
+          });
+        }
+        user.vicidialAgentId = trimmedViciId;
+      } else {
+        user.vicidialAgentId = undefined;
+      }
+    }
 
     await user.save();
 

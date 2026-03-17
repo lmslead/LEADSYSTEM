@@ -1,6 +1,6 @@
 import React, { useState } from 'react';
 import { useAuth } from '../contexts/AuthContext';
-import { User, Mail, Lock, Save } from 'lucide-react';
+import { User, Mail, Lock, Save, Phone } from 'lucide-react';
 import toast from 'react-hot-toast';
 import { formatEasternTimeForDisplay } from '../utils/dateUtils';
 
@@ -11,6 +11,8 @@ const Profile = () => {
     name: user?.name || '',
     email: user?.email || ''
   });
+  const [viciId, setViciId] = useState(user?.vicidialAgentId || '');
+  const [savingViciId, setSavingViciId] = useState(false);
   const [passwordData, setPasswordData] = useState({
     currentPassword: '',
     newPassword: '',
@@ -20,6 +22,23 @@ const Profile = () => {
 
   // Check if user can edit profile (only admin and superadmin)
   const canEditProfile = ['admin', 'superadmin'].includes(user.role);
+  // agent1 can self-manage their Vicidial Agent ID
+  const canEditViciId = user.role === 'agent1';
+
+  const handleViciIdSubmit = async (e) => {
+    e.preventDefault();
+    setSavingViciId(true);
+    try {
+      const result = await updateProfile({ vicidialAgentId: viciId.trim() });
+      if (!result.success) {
+        // error toast already shown by context
+      }
+    } catch (error) {
+      console.error('Vicidial ID update error:', error);
+    } finally {
+      setSavingViciId(false);
+    }
+  };
 
   const handleProfileSubmit = async (e) => {
     e.preventDefault();
@@ -213,10 +232,66 @@ const Profile = () => {
                       {formatEasternTimeForDisplay(user.createdAt, { includeTime: false })}
                     </p>
                   </div>
+                  {(user.vicidialAgentId || canEditViciId) && (
+                    <div>
+                      <span className="text-sm text-gray-600">Vicidial Agent ID:</span>
+                      <div className="mt-1">
+                        {user.vicidialAgentId ? (
+                          <span className="inline-flex items-center px-2 py-1 rounded text-xs font-medium bg-indigo-100 text-indigo-700">
+                            <Phone className="h-3 w-3 mr-1" />
+                            {user.vicidialAgentId}
+                          </span>
+                        ) : (
+                          <span className="text-xs text-gray-400">Not set</span>
+                        )}
+                      </div>
+                    </div>
+                  )}
                 </div>
               </div>
 
-              {!canEditProfile && (
+              {/* ViciDial Agent ID — editable by agent1 */}
+              {canEditViciId && (
+                <form onSubmit={handleViciIdSubmit}>
+                  <div className="bg-indigo-50 border border-indigo-200 rounded-md p-4 space-y-3">
+                    <div className="flex items-center space-x-2">
+                      <Phone className="h-5 w-5 text-indigo-600" />
+                      <h4 className="text-sm font-medium text-indigo-900">Vicidial Integration</h4>
+                    </div>
+                    <p className="text-xs text-indigo-700">
+                      Set your Vicidial Agent ID so that live call data is automatically routed to your LMS dashboard when you answer a call.
+                    </p>
+                    <div className="relative">
+                      <Phone className="h-5 w-5 text-gray-400 absolute left-3 top-2.5" />
+                      <input
+                        type="text"
+                        value={viciId}
+                        onChange={(e) => setViciId(e.target.value)}
+                        placeholder="e.g. AGENT001"
+                        maxLength={50}
+                        className="w-full pl-10 pr-3 py-2 border border-indigo-300 rounded-md text-sm focus:outline-none focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 bg-white"
+                      />
+                    </div>
+                    {user.vicidialAgentId && (
+                      <p className="text-xs text-indigo-600">
+                        Current ID: <span className="font-semibold">{user.vicidialAgentId}</span>
+                      </p>
+                    )}
+                    <div className="flex justify-end">
+                      <button
+                        type="submit"
+                        disabled={savingViciId}
+                        className="inline-flex items-center px-4 py-2 border border-transparent text-sm font-medium rounded-md shadow-sm text-white bg-indigo-600 hover:bg-indigo-700 focus:outline-none focus:ring-2 focus:ring-offset-2 focus:ring-indigo-500 disabled:opacity-50"
+                      >
+                        <Save className="h-4 w-4 mr-2" />
+                        {savingViciId ? 'Saving...' : 'Save Vicidial ID'}
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              )}
+
+              {!canEditProfile && !canEditViciId && (
                 <div className="bg-blue-50 border border-blue-200 rounded-md p-4">
                   <div className="flex">
                     <div className="ml-3">

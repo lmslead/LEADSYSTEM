@@ -90,8 +90,8 @@ const Layout = ({ onDashboardRefresh }) => {
   const getNavItems = () => {
     const baseItems = [];
 
-    // Only add Profile for admin and superadmin roles
-    if (['admin', 'superadmin'].includes(user.role)) {
+    // Add Profile for admin, superadmin, and agent1 (agent1 can manage their Vicidial ID)
+    if (['admin', 'superadmin', 'agent1'].includes(user.role)) {
       baseItems.push({ name: 'Profile', href: '/profile', icon: User });
     }
 
@@ -117,7 +117,8 @@ const Layout = ({ onDashboardRefresh }) => {
       ];
     } else {
       return [
-        { name: 'Dashboard', href: '/dashboard', icon: Home }
+        { name: 'Dashboard', href: '/dashboard', icon: Home },
+        ...baseItems
       ];
     }
   };
