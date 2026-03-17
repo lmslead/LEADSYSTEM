@@ -513,6 +513,12 @@ const AdminDashboard = () => {
     return isReddingtonByName || isReddingtonById;
   }, [user]);
 
+  // Check if user is from GTI organization — GTI admins cannot access Agent Management
+  const isGtiAdmin = useMemo(() => {
+    const orgName = (user?.organization?.name || '').trim().toUpperCase();
+    return orgName === (process.env.REACT_APP_GTI_ORG_NAME || 'GTI').trim().toUpperCase();
+  }, [user]);
+
   // Periodic stats refresh — every 30 s ensures cards stay in sync with DB
   // even if a socket event is missed (e.g. connection drop, batch import)
   useEffect(() => {
@@ -2290,8 +2296,8 @@ const AdminDashboard = () => {
         onLeadReassigned={handleLeadReassigned}
       />
 
-      {/* Agent Management Section */}
-      <AgentManagement />
+      {/* Agent Management Section — hidden for GTI organisation admins */}
+      {!isGtiAdmin && <AgentManagement />}
 
       {/* Admin Upload Share Modal */}
       <AdminUploadShareModal
