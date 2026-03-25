@@ -4,9 +4,7 @@ import { useRefresh } from '../contexts/RefreshContext';
 import { scrollToTop } from '../utils/scrollUtils';
 import { 
   Plus, 
-  Users, 
-  TrendingUp, 
-  Calendar
+  Users
 } from 'lucide-react';
 import axios from '../utils/axios';
 import toast from 'react-hot-toast';
@@ -52,7 +50,6 @@ const Agent1Dashboard = () => {
   const { registerRefreshCallback, unregisterRefreshCallback } = useRefresh();
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
-  const [showForm, setShowForm] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingLead, setEditingLead] = useState(null);
   const [showAssignModal, setShowAssignModal] = useState(false);
@@ -168,12 +165,16 @@ const Agent1Dashboard = () => {
   };
 
   const closeCreateLeadModal = useCallback(() => {
-    console.log('🚪 Closing create lead modal');
-    setShowForm(false);
     setIsFormActive(false);
     setActiveVicidialCallId(null);
     resetGtiDispositionState();
-    setFormErrors((prev) => ({ ...prev, dispositionReason: '' }));
+    setFormErrors({ phone: '', alternatePhone: '', dispositionReason: '' });
+    setFormData({
+      name: '', email: '', phone: '', alternatePhone: '',
+      debtCategory: 'unsecured', debtTypes: [],
+      totalDebtAmount: '', numberOfCreditors: '', monthlyDebtPayment: '',
+      creditScore: '', creditScoreRange: '', address: '', city: '', state: '', zipcode: '', notes: ''
+    });
   }, [resetGtiDispositionState]);
 
   // Handler for VicidialCallQueue — loads call data into the Add Lead form
@@ -213,10 +214,6 @@ const Agent1Dashboard = () => {
 
     // Track which vicidial call we are processing
     setActiveVicidialCallId(callData._vicidialCallId || null);
-
-    // Open the Add Lead form
-    console.log('🚀 Opening form for live ViciDial call - showForm=true, isFormActive=true');
-    setShowForm(true);
     setIsFormActive(true);
   }, [resetGtiDispositionState]);
 
@@ -999,42 +996,6 @@ const Agent1Dashboard = () => {
     }
   };
 
-  const getCategoryBadge = (category, completionPercentage) => {
-    const badges = {
-      hot: 'bg-red-100 text-red-800 border-red-200',
-      warm: 'bg-yellow-100 text-yellow-800 border-yellow-200',
-      cold: 'bg-blue-100 text-blue-800 border-blue-200'
-    };
-
-    return (
-      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium border ${badges[category]}`}>
-        {category.charAt(0).toUpperCase() + category.slice(1)} ({completionPercentage}%)
-      </span>
-    );
-  };
-
-  const getStatusBadge = (status) => {
-    // Handle undefined or null status
-    const safeStatus = status || 'new';
-    
-    const badges = {
-      new: 'bg-gray-100 text-gray-800',
-      interested: 'bg-green-100 text-green-800',
-      'not-interested': 'bg-red-100 text-red-800',
-      successful: 'bg-emerald-100 text-emerald-800',
-      'follow-up': 'bg-blue-100 text-blue-800'
-    };
-
-    // Use default style if status is not in badges object
-    const badgeStyle = badges[safeStatus] || badges.new;
-
-    return (
-      <span className={`inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-medium ${badgeStyle}`}>
-        {safeStatus.replace('-', ' ').replace(/\b\w/g, l => l.toUpperCase())}
-      </span>
-    );
-  };
-
   // Calculate stats for display - showing today's leads only for agents (Eastern Time)
   const todayStart = getEasternStartOfDay();
   const todayEnd = getEasternEndOfDay();
@@ -1058,7 +1019,9 @@ const Agent1Dashboard = () => {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="flex flex-col min-[900px]:flex-row gap-4 items-start">
+      {/* ===== LEFT: Main Dashboard Content ===== */}
+      <div className="flex-1 min-w-0 space-y-6">
       {/* Header */}
       <div className="flex justify-between items-center">
         <div>
@@ -1066,7 +1029,7 @@ const Agent1Dashboard = () => {
           <p className="text-gray-600">Manage your leads and track your progress</p>
         </div>
         <button
-          onClick={() => setShowForm(true)}
+          onClick={() => { closeCreateLeadModal(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
           className="inline-flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors duration-200"
         >
           <Plus className="h-5 w-5 mr-2" />
@@ -1328,60 +1291,71 @@ const Agent1Dashboard = () => {
         )}
       </div>
 
-      {/* Add Lead Modal - Modern Redesigned */}
-      {showForm && (
-        <div className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto p-2 sm:p-4">
-          <div
-            className="absolute inset-0 bg-black bg-opacity-50"
-            onClick={closeCreateLeadModal}
-          />
+      </div>{/* END LEFT COLUMN */}
 
-            <div className="relative bg-white rounded-xl text-left shadow-2xl transform transition-all w-full max-w-6xl my-2 sm:my-6">
-              <form onSubmit={handleSubmit}>
-                {/* Header */}
-                <div className="bg-gradient-to-r from-primary-600 to-primary-700 px-6 py-4">
-                  <div className="flex items-center justify-between">
-                    <div>
-                      <h3 className="text-xl font-semibold text-white">Add New Lead</h3>
-                      <p className="text-primary-100 text-sm">Complete lead information form</p>
-                    </div>
-                    <button
-                      type="button"
-                      onClick={closeCreateLeadModal}
-                      className="text-white hover:text-primary-200 transition-colors"
-                    >
-                      <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+      {/* ===== RIGHT: Persistent Add Lead Form Panel ===== */}
+      <div className="w-full min-[900px]:w-[350px] lg:w-[460px] flex-shrink-0">
+        <div className="relative z-10 min-[900px]:sticky min-[900px]:top-4 min-[900px]:max-h-[calc(100vh-5rem)] min-[900px]:overflow-y-auto w-full">
+          {isFormActive && (
+            <div className="bg-green-500 text-white text-xs font-semibold px-4 py-2 rounded-t-xl flex items-center gap-2">
+              <span className="w-2 h-2 rounded-full bg-white animate-pulse inline-block" />
+              Live call — fields auto-filled from ViciDial
+            </div>
+          )}
+          <div className={`bg-white shadow-lg border border-gray-200 overflow-hidden${isFormActive ? ' rounded-b-xl' : ' rounded-xl'}`}>
+            <form onSubmit={handleSubmit}>
+              {/* Header */}
+              <div className="bg-gradient-to-br from-primary-600 via-primary-700 to-primary-800 px-5 py-4">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-3">
+                    <div className="bg-white/20 rounded-lg p-2 flex-shrink-0">
+                      <svg className="w-5 h-5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" />
                       </svg>
-                    </button>
+                    </div>
+                    <div>
+                      <h3 className="text-lg font-bold text-white leading-tight">Add New Lead</h3>
+                      <p className="text-primary-200 text-xs mt-0.5">Complete lead information form</p>
+                    </div>
                   </div>
+                  <button
+                    type="button"
+                    onClick={closeCreateLeadModal}
+                    title="Clear form"
+                    className="bg-white/10 hover:bg-white/25 text-white rounded-lg p-1.5 transition-all duration-200"
+                  >
+                    <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+                    </svg>
+                  </button>
                 </div>
+              </div>
 
 
 
-                {/* Form Content - Two Column Layout */}
-                <div className="bg-white p-3 sm:p-6 overflow-y-auto">
-                  <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-8">
+                {/* Form Content */}
+                <div className="bg-white p-3 sm:p-4">
+                  <div className="grid grid-cols-1 gap-4 sm:gap-6">
                     
-                    {/* Left Column - Personal & Contact Information */}
-                    <div className="space-y-3 sm:space-y-5">
-                      <div className="border-b border-gray-200 pb-2 mb-4">
-                        <h4 className="text-lg font-semibold text-gray-900 flex items-center">
-                          <svg className="w-5 h-5 text-primary-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    {/* Personal & Contact Information */}
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 bg-primary-50 border border-primary-100 rounded-lg px-3 py-2 mb-2">
+                        <div className="bg-primary-600 rounded-md p-1">
+                          <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
                           </svg>
-                          Personal Information
-                        </h4>
+                        </div>
+                        <h4 className="text-sm font-bold text-primary-800 uppercase tracking-wide">Personal Information</h4>
                       </div>
 
                       {/* Name */}
                       <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">Full Name *</label>
+                        <label className="block text-xs font-bold text-gray-600 mb-1 uppercase tracking-wide">Full Name *</label>
                         <input
                           type="text"
                           name="name"
                           required
-                          className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                          className="w-full px-3 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-400 transition-all duration-200 bg-gray-50 focus:bg-white text-sm"
                           value={formData.name}
                           onChange={handleInputChange}
                           onKeyDown={handleKeyDown}
@@ -1391,11 +1365,11 @@ const Agent1Dashboard = () => {
 
                       {/* Email */}
                       <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">Email Address</label>
+                        <label className="block text-xs font-bold text-gray-600 mb-1 uppercase tracking-wide">Email Address</label>
                         <input
                           type="email"
                           name="email"
-                          className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                          className="w-full px-3 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-400 transition-all duration-200 bg-gray-50 focus:bg-white text-sm"
                           value={formData.email}
                           onChange={handleInputChange}
                           onKeyDown={handleKeyDown}
@@ -1404,67 +1378,69 @@ const Agent1Dashboard = () => {
                       </div>
 
                       {/* Phone Numbers */}
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">Primary Phone *</label>
+                          <label className="block text-xs font-bold text-gray-600 mb-1 uppercase tracking-wide">Primary Phone *</label>
                           <div className="relative">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                              <span className="text-gray-500 sm:text-sm">+1</span>
+                            <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
+                              <span className="text-gray-500 text-xs font-semibold">+1</span>
                             </div>
                             <input
                               type="tel"
                               name="phone"
                               required
-                              className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white ${
+                              className={`w-full pl-8 pr-3 py-2.5 border rounded-lg focus:ring-2 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white text-sm ${
                                 formErrors.phone 
                                   ? 'border-red-300 focus:ring-red-500' 
-                                  : 'border-gray-200 focus:ring-primary-500'
+                                  : 'border-gray-200 focus:ring-primary-500 focus:border-primary-400'
                               }`}
                               value={getDisplayPhone(formData.phone)}
                               onChange={handlePhoneInputChange}
                               onBlur={handlePhoneBlur}
                               onKeyDown={handleKeyDown}
-                              placeholder="Enter 10 digits (e.g. 2345678901)"
+                              placeholder="10 digits"
                               maxLength="10"
                             />
                           </div>
                           {formErrors.phone && (
-                            <p className="mt-1 text-sm text-red-600">{formErrors.phone}</p>
+                            <p className="mt-1 text-xs text-red-600">{formErrors.phone}</p>
                           )}
                         </div>
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">Alternate Phone</label>
+                          <label className="block text-xs font-bold text-gray-600 mb-1 uppercase tracking-wide">Alt. Phone</label>
                           <div className="relative">
-                            <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                              <span className="text-gray-500 sm:text-sm">+1</span>
+                            <div className="absolute inset-y-0 left-0 pl-2.5 flex items-center pointer-events-none">
+                              <span className="text-gray-500 text-xs font-semibold">+1</span>
                             </div>
                             <input
                               type="tel"
                               name="alternatePhone"
-                              className={`w-full pl-10 pr-4 py-3 border rounded-lg focus:ring-2 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white ${
+                              className={`w-full pl-8 pr-3 py-2.5 border rounded-lg focus:ring-2 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white text-sm ${
                                 formErrors.alternatePhone 
                                   ? 'border-red-300 focus:ring-red-500' 
-                                  : 'border-gray-200 focus:ring-primary-500'
+                                  : 'border-gray-200 focus:ring-primary-500 focus:border-primary-400'
                               }`}
                               value={getDisplayPhone(formData.alternatePhone)}
                               onChange={handlePhoneInputChange}
                               onBlur={handlePhoneBlur}
                               onKeyDown={handleKeyDown}
-                              placeholder="Enter 10 digits (optional)"
+                              placeholder="10 digits (opt)"
                               maxLength="10"
                             />
                           </div>
                           {formErrors.alternatePhone && (
-                            <p className="mt-1 text-sm text-red-600">{formErrors.alternatePhone}</p>
+                            <p className="mt-1 text-xs text-red-600">{formErrors.alternatePhone}</p>
                           )}
                         </div>
-                      </div>                      {/* Address */}
+                      </div>
+
+                      {/* Address */}
                       <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">Street Address</label>
+                        <label className="block text-xs font-bold text-gray-600 mb-1 uppercase tracking-wide">Street Address</label>
                         <input
                           type="text"
                           name="address"
-                          className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                          className="w-full px-3 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-400 transition-all duration-200 bg-gray-50 focus:bg-white text-sm"
                           value={formData.address}
                           onChange={handleInputChange}
                           onKeyDown={handleKeyDown}
@@ -1473,13 +1449,13 @@ const Agent1Dashboard = () => {
                       </div>
 
                       {/* City, State, Zipcode */}
-                      <div className="grid grid-cols-3 gap-4">
+                      <div className="grid grid-cols-3 gap-2">
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">City</label>
+                          <label className="block text-xs font-bold text-gray-600 mb-1 uppercase tracking-wide">City</label>
                           <input
                             type="text"
                             name="city"
-                            className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                            className="w-full px-3 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-400 transition-all duration-200 bg-gray-50 focus:bg-white text-sm"
                             value={formData.city}
                             onChange={handleInputChange}
                           onKeyDown={handleKeyDown}
@@ -1487,11 +1463,11 @@ const Agent1Dashboard = () => {
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">State</label>
+                          <label className="block text-xs font-bold text-gray-600 mb-1 uppercase tracking-wide">State</label>
                           <input
                             type="text"
                             name="state"
-                            className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                            className="w-full px-3 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-400 transition-all duration-200 bg-gray-50 focus:bg-white text-sm"
                             value={formData.state}
                             onChange={handleInputChange}
                           onKeyDown={handleKeyDown}
@@ -1499,11 +1475,11 @@ const Agent1Dashboard = () => {
                           />
                         </div>
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">ZIP Code</label>
+                          <label className="block text-xs font-bold text-gray-600 mb-1 uppercase tracking-wide">ZIP</label>
                           <input
                             type="text"
                             name="zipcode"
-                            className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                            className="w-full px-3 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-400 transition-all duration-200 bg-gray-50 focus:bg-white text-sm"
                             value={formData.zipcode}
                             onChange={handleInputChange}
                           onKeyDown={handleKeyDown}
@@ -1514,11 +1490,11 @@ const Agent1Dashboard = () => {
 
                       {/* Notes */}
                       <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">Additional Notes</label>
+                        <label className="block text-xs font-bold text-gray-600 mb-1 uppercase tracking-wide">Additional Notes</label>
                         <textarea
                           name="notes"
-                          rows="3"
-                          className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white resize-none"
+                          rows="2"
+                          className="w-full px-3 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-400 transition-all duration-200 bg-gray-50 focus:bg-white resize-none text-sm"
                           value={formData.notes}
                           onChange={handleInputChange}
                           onKeyDown={handleKeyDown}
@@ -1527,29 +1503,29 @@ const Agent1Dashboard = () => {
                       </div>
                     </div>
 
-                    {/* Right Column - Financial & Debt Information */}
-                    <div className="space-y-3 sm:space-y-5">
-                      <div className="border-b border-gray-200 pb-2 mb-4">
-                        <h4 className="text-lg font-semibold text-gray-900 flex items-center">
-                          <svg className="w-5 h-5 text-primary-600 mr-2" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    {/* Financial & Debt Information */}
+                    <div className="space-y-3">
+                      <div className="flex items-center gap-2 bg-emerald-50 border border-emerald-100 rounded-lg px-3 py-2 mb-2">
+                        <div className="bg-emerald-600 rounded-md p-1">
+                          <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                             <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8c-1.657 0-3 .895-3 2s1.343 2 3 2 3 .895 3 2-1.343 2-3 2m0-8c1.11 0 2.08.402 2.599 1M12 8V7m0 1v8m0 0v1m0-1c-1.11 0-2.08-.402-2.599-1" />
                           </svg>
-                          Financial Information
-                        </h4>
+                        </div>
+                        <h4 className="text-sm font-bold text-emerald-800 uppercase tracking-wide">Financial Information</h4>
                       </div>
 
                       {/* Financial Fields */}
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">Total Debt Amount</label>
+                          <label className="block text-xs font-bold text-gray-600 mb-1 uppercase tracking-wide">Total Debt</label>
                           <div className="relative">
-                            <span className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-500">$</span>
+                            <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 text-sm">$</span>
                             <input
                               type="number"
                               name="totalDebtAmount"
                               min="0"
                               step="0.01"
-                              className="w-full pl-8 pr-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                              className="w-full pl-7 pr-3 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-400 transition-all duration-200 bg-gray-50 focus:bg-white text-sm"
                               value={formData.totalDebtAmount}
                               onChange={handleInputChange}
                           onKeyDown={handleKeyDown}
@@ -1558,12 +1534,12 @@ const Agent1Dashboard = () => {
                           </div>
                         </div>
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">Number of Creditors</label>
+                          <label className="block text-xs font-bold text-gray-600 mb-1 uppercase tracking-wide"># Creditors</label>
                           <input
                             type="number"
                             name="numberOfCreditors"
                             min="0"
-                            className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                            className="w-full px-3 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-400 transition-all duration-200 bg-gray-50 focus:bg-white text-sm"
                             value={formData.numberOfCreditors}
                             onChange={handleInputChange}
                           onKeyDown={handleKeyDown}
@@ -1572,17 +1548,17 @@ const Agent1Dashboard = () => {
                         </div>
                       </div>
 
-                      <div className="grid grid-cols-2 gap-4">
+                      <div className="grid grid-cols-2 gap-3">
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">Monthly Payment</label>
+                          <label className="block text-xs font-bold text-gray-600 mb-1 uppercase tracking-wide">Monthly Payment</label>
                           <div className="relative">
-                            <span className="absolute left-4 top-1/2 transform -translate-y-1/2 text-gray-500">$</span>
+                            <span className="absolute left-3 top-1/2 transform -translate-y-1/2 text-gray-500 text-sm">$</span>
                             <input
                               type="number"
                               name="monthlyDebtPayment"
                               min="0"
                               step="0.01"
-                              className="w-full pl-8 pr-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                              className="w-full pl-7 pr-3 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-400 transition-all duration-200 bg-gray-50 focus:bg-white text-sm"
                               value={formData.monthlyDebtPayment}
                               onChange={handleInputChange}
                           onKeyDown={handleKeyDown}
@@ -1591,13 +1567,13 @@ const Agent1Dashboard = () => {
                           </div>
                         </div>
                         <div>
-                          <label className="block text-sm font-semibold text-gray-700 mb-2">Credit Score</label>
+                          <label className="block text-xs font-bold text-gray-600 mb-1 uppercase tracking-wide">Credit Score</label>
                           <input
                             type="number"
                             name="creditScore"
                             min="0"
                             max="900"
-                            className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                            className="w-full px-3 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-400 transition-all duration-200 bg-gray-50 focus:bg-white text-sm"
                             value={formData.creditScore || ""}
                             onChange={e => {
                               let val = e.target.value.replace(/[^\d]/g, "");
@@ -1613,10 +1589,10 @@ const Agent1Dashboard = () => {
 
                       {/* Credit Score Range */}
                       <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">Credit Score Range</label>
+                        <label className="block text-xs font-bold text-gray-600 mb-1 uppercase tracking-wide">Credit Score Range</label>
                         <select
                           name="creditScoreRange"
-                          className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white"
+                          className="w-full px-3 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-400 transition-all duration-200 bg-gray-50 focus:bg-white text-sm"
                           value={formData.creditScoreRange}
                           onChange={handleInputChange}
                           onKeyDown={handleKeyDown}
@@ -1632,10 +1608,10 @@ const Agent1Dashboard = () => {
 
                       {/* Debt Type Selection - Improved Design */}
                       <div>
-                        <label className="block text-sm font-semibold text-gray-700 mb-2">Debt Category</label>
+                        <label className="block text-xs font-bold text-gray-600 mb-1 uppercase tracking-wide">Debt Category</label>
                         <select
                           name="debtCategory"
-                          className="w-full px-4 py-3 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-transparent transition-all duration-200 bg-gray-50 focus:bg-white mb-3"
+                          className="w-full px-3 py-2.5 border border-gray-200 rounded-lg focus:ring-2 focus:ring-primary-500 focus:border-primary-400 transition-all duration-200 bg-gray-50 focus:bg-white mb-2 text-sm"
                           value={formData.debtCategory}
                           onChange={handleDebtCategoryChange}
                         >
@@ -1668,16 +1644,16 @@ const Agent1Dashboard = () => {
 
                         {/* Debt Type Options */}
                         <div>
-                          <label className="block text-xs font-medium text-gray-500 mb-2 uppercase tracking-wide">
+                          <label className="block text-xs font-bold text-gray-500 mb-1.5 uppercase tracking-wide">
                             Select {formData.debtCategory} debt types:
                           </label>
-                          <div className="grid grid-cols-1 gap-2 max-h-40 overflow-y-auto border border-gray-200 rounded-lg p-3 bg-gray-50">
+                          <div className="grid grid-cols-1 gap-1.5 max-h-36 overflow-y-auto border border-gray-200 rounded-lg p-2 bg-gray-50">
                             {DEBT_TYPES_BY_CATEGORY[formData.debtCategory].map((type) => (
                               <button
                                 key={type}
                                 type="button"
                                 onClick={() => handleDebtTypeToggle(type)}
-                                className={`text-left px-3 py-2 rounded-md text-sm transition-all duration-200 ${
+                                className={`text-left px-2.5 py-1.5 rounded-md text-xs font-medium transition-all duration-200 ${
                                   formData.debtTypes.includes(type)
                                     ? 'bg-primary-600 text-white shadow-sm'
                                     : 'bg-white text-gray-700 hover:bg-primary-50 hover:text-primary-700 border border-gray-200'
@@ -1692,16 +1668,16 @@ const Agent1Dashboard = () => {
                     </div>
                   </div>
 
-                  <div className="mt-4 sm:mt-8 border-t border-gray-200 pt-4 sm:pt-6">
-                      <div className="flex flex-col gap-2 sm:flex-row sm:items-center sm:justify-between">
-                        <div>
-                          <p className="text-base font-semibold text-gray-900">Disposition Reason</p>
-                          <p className="text-sm text-gray-600">
-                            Choose a reason to dispose this lead immediately. Leave it blank to add the lead normally.
-                          </p>
+                  <div className="mt-3 border-t border-gray-200 pt-3">
+                      <div className="flex items-center gap-2 bg-orange-50 border border-orange-100 rounded-lg px-3 py-2 mb-3">
+                        <div className="bg-orange-500 rounded-md p-1">
+                          <svg className="w-3.5 h-3.5 text-white" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5H7a2 2 0 00-2 2v12a2 2 0 002 2h10a2 2 0 002-2V7a2 2 0 00-2-2h-2M9 5a2 2 0 002 2h2a2 2 0 002-2M9 5a2 2 0 012-2h2a2 2 0 012 2" />
+                          </svg>
                         </div>
-                        <div className="text-sm text-gray-500 bg-gray-100 px-3 py-1 rounded-md">
-                          Action button updates automatically
+                        <div>
+                          <h4 className="text-sm font-bold text-orange-800 uppercase tracking-wide">Disposition Reason</h4>
+                          <p className="text-xs text-orange-600">Leave blank to add lead normally</p>
                         </div>
                       </div>
 
@@ -1785,18 +1761,18 @@ const Agent1Dashboard = () => {
                 </div>
 
                 {/* Footer */}
-                <div className="bg-gray-50 px-6 py-4 flex flex-col sm:flex-row justify-end space-y-2 sm:space-y-0 sm:space-x-3">
+                <div className="bg-gradient-to-r from-gray-50 to-gray-100 border-t border-gray-200 px-5 py-3 flex flex-row justify-end gap-2">
                   <button
                     type="button"
                     onClick={closeCreateLeadModal}
-                    className="w-full sm:w-auto px-6 py-2 border border-gray-300 rounded-lg text-gray-700 bg-white hover:bg-gray-50 focus:ring-2 focus:ring-gray-500 transition-all duration-200"
+                    className="px-4 py-2 border border-gray-300 rounded-lg text-sm font-medium text-gray-700 bg-white hover:bg-gray-50 focus:ring-2 focus:ring-gray-400 transition-all duration-200"
                   >
-                    Cancel
+                    Clear
                   </button>
                   <button
                     type="submit"
                     disabled={submitting}
-                    className="w-full sm:w-auto px-6 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 focus:ring-2 focus:ring-primary-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed"
+                    className="px-5 py-2 bg-primary-600 text-white rounded-lg text-sm font-semibold hover:bg-primary-700 focus:ring-2 focus:ring-primary-500 transition-all duration-200 disabled:opacity-50 disabled:cursor-not-allowed shadow-md"
                   >
                     {submitting ? (
                       <span className="flex items-center">
@@ -1812,9 +1788,11 @@ const Agent1Dashboard = () => {
                   </button>
                 </div>
               </form>
-            </div>
+          </div>
         </div>
-      )}
+      </div>
+
+
 
       {/* Edit Lead Modal */}
       {showEditModal && editingLead && (

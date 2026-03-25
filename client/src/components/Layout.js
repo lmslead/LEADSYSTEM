@@ -26,10 +26,10 @@ const Layout = ({ onDashboardRefresh }) => {
   const location = useLocation();
   const navigate = useNavigate();
 
-  // Prevent copying FROM the dashboard for all non-superadmin roles.
+  // Prevent copying FROM the dashboard for restricted roles.
   // Paste INTO the dashboard is intentionally allowed.
   useEffect(() => {
-    const restrictedRoles = ['admin', 'agent1', 'agent2', 'restricted_admin'];
+    const restrictedRoles = ['admin', 'agent2', 'restricted_admin'];
     if (!user || !restrictedRoles.includes(user.role)) return;
 
     const block = (e) => e.preventDefault();
@@ -127,7 +127,7 @@ const Layout = ({ onDashboardRefresh }) => {
 
   const isActive = (href) => location.pathname === href;
 
-  const isRestricted = user && ['admin', 'agent1', 'agent2'].includes(user.role);
+  const isRestricted = user && ['admin', 'agent2'].includes(user.role);
 
   return (
     <div className={`flex h-screen bg-gray-100${isRestricted ? ' select-none' : ''}`}>
