@@ -75,6 +75,7 @@ const VicidialCallQueue = ({ onLoadCallData, isFormActive }) => {
         _vicidialCallId: callData._id,
         _vicidialCallType: callData.callType,
         _vicidialCampaign: callData.campaignName,
+        _vicidialDid: callData.did || '',
       };
 
       // ALWAYS auto-open when ViciDial sends data
@@ -162,6 +163,7 @@ const VicidialCallQueue = ({ onLoadCallData, isFormActive }) => {
         _vicidialCallId: call._id,
         _vicidialCallType: call.callType,
         _vicidialCampaign: call.campaignName,
+        _vicidialDid: call.did || '',
       };
 
       // Remove from local queue

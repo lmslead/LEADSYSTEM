@@ -62,6 +62,8 @@ const Agent1Dashboard = () => {
   const [submitting, setSubmitting] = useState(false);
   // Vicidial call queue — tracks which call data is currently being used to fill form
   const [activeVicidialCallId, setActiveVicidialCallId] = useState(null);
+  // DID number from inbound call (present = inbound, absent = outbound)
+  const [activeVicidialDid, setActiveVicidialDid] = useState('');
   // Track if form is currently active to prevent multiple forms from opening
   const [isFormActive, setIsFormActive] = useState(false);
 
@@ -167,6 +169,7 @@ const Agent1Dashboard = () => {
   const closeCreateLeadModal = useCallback(() => {
     setIsFormActive(false);
     setActiveVicidialCallId(null);
+    setActiveVicidialDid('');
     resetGtiDispositionState();
     setFormErrors({ phone: '', alternatePhone: '', dispositionReason: '' });
     setFormData({
@@ -214,6 +217,7 @@ const Agent1Dashboard = () => {
 
     // Track which vicidial call we are processing
     setActiveVicidialCallId(callData._vicidialCallId || null);
+    setActiveVicidialDid(callData._vicidialDid || '');
     setIsFormActive(true);
   }, [resetGtiDispositionState]);
 
@@ -1297,10 +1301,17 @@ const Agent1Dashboard = () => {
       <div className="w-full min-[900px]:w-[350px] lg:w-[460px] flex-shrink-0">
         <div className="relative z-10 min-[900px]:sticky min-[900px]:top-4 min-[900px]:max-h-[calc(100vh-5rem)] min-[900px]:overflow-y-auto w-full">
           {isFormActive && (
-            <div className="bg-green-500 text-white text-xs font-semibold px-4 py-2 rounded-t-xl flex items-center gap-2">
-              <span className="w-2 h-2 rounded-full bg-white animate-pulse inline-block" />
-              Live call — fields auto-filled from ViciDial
-            </div>
+            activeVicidialDid ? (
+              <div className="bg-red-600 text-white text-xs font-semibold px-4 py-2 rounded-t-xl flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-white animate-pulse inline-block" />
+                📥 INBOUND CALL — DID: {activeVicidialDid}
+              </div>
+            ) : (
+              <div className="bg-blue-600 text-white text-xs font-semibold px-4 py-2 rounded-t-xl flex items-center gap-2">
+                <span className="w-2 h-2 rounded-full bg-white animate-pulse inline-block" />
+                📤 OUTBOUND CALL — fields auto-filled from ViciDial
+              </div>
+            )
           )}
           <div className={`bg-white shadow-lg border border-gray-200 overflow-hidden${isFormActive ? ' rounded-b-xl' : ' rounded-xl'}`}>
             <form onSubmit={handleSubmit}>

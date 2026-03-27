@@ -119,6 +119,8 @@ router.post('/call-data', async (req, res) => {
       payload.campaign || payload.campaignName || payload.campaign_id || ''
     ).toString().trim();
 
+    const did = (payload.did || payload.DID || '').toString().trim();
+
     // Look up the LMS user mapped to this Vicidial agent ID
     const agent = await User.findOne({
       vicidialAgentId: vicidialAgentId,
@@ -140,6 +142,7 @@ router.post('/call-data', async (req, res) => {
       callType: callType === 'outbound' ? 'outbound' : 'inbound',
       callId: callId || undefined,
       campaignName: campaignName || undefined,
+      did: did || undefined,
       listId: (payload.list_id || payload.listId || '').toString().trim() || undefined,
       vendorLeadCode: (payload.vendor_lead_code || payload.vendorLeadCode || '').toString().trim() || undefined,
       callStatus: (payload.status || payload.dispo || '').toString().trim() || undefined,
@@ -173,6 +176,7 @@ router.post('/call-data', async (req, res) => {
         callType: callData.callType,
         callId,
         campaignName,
+        did: did || undefined,
         priority: callData.priority,
         receivedAt: vicidialCall.receivedAt,
       };
@@ -249,6 +253,8 @@ router.get('/call-data', async (req, res) => {
       payload.campaign || payload.campaignName || payload.campaign_id || ''
     ).toString().trim();
 
+    const did = (payload.did || payload.DID || '').toString().trim();
+
     const agent = await User.findOne({
       vicidialAgentId: vicidialAgentId,
       isActive: true,
@@ -268,6 +274,7 @@ router.get('/call-data', async (req, res) => {
       callType: callType === 'outbound' ? 'outbound' : 'inbound',
       callId: callId || undefined,
       campaignName: campaignName || undefined,
+      did: did || undefined,
       listId: (payload.list_id || payload.listId || '').toString().trim() || undefined,
       vendorLeadCode: (payload.vendor_lead_code || payload.vendorLeadCode || '').toString().trim() || undefined,
       callStatus: (payload.status || payload.dispo || '').toString().trim() || undefined,
@@ -299,6 +306,7 @@ router.get('/call-data', async (req, res) => {
         callType: callData.callType,
         callId,
         campaignName,
+        did: did || undefined,
         priority: callData.priority,
         receivedAt: vicidialCall.receivedAt,
       };

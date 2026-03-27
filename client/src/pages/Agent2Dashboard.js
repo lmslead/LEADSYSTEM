@@ -1006,7 +1006,7 @@ const Agent2Dashboard = () => {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {leads.map((lead) => (
-                <tr key={lead.leadId || lead._id} className="hover:bg-gray-50">
+                <tr key={lead.leadId || lead._id} className={lead.leadId?.startsWith('GTI') ? 'bg-red-50 hover:bg-red-100 border-l-4 border-red-400' : 'hover:bg-gray-50'}>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div>
                       <div className="text-sm font-medium text-gray-900">{lead.name}</div>
@@ -1849,7 +1849,7 @@ const Agent2Dashboard = () => {
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
               {stats.todaysLeads?.map((lead) => (
-                <tr key={lead.leadId || lead._id} className="hover:bg-gray-50">
+                <tr key={lead.leadId || lead._id} className={lead.leadId?.startsWith('GTI') ? 'bg-red-50 hover:bg-red-100 border-l-4 border-red-400' : 'hover:bg-gray-50'}>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div>
                       <div className="text-sm font-medium text-gray-900">{lead.name}</div>

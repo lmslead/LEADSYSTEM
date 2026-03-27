@@ -88,6 +88,32 @@ const AdminDashboard = () => {
   const [showReassignModal, setShowReassignModal] = useState(false);
   const [leadToReassign, setLeadToReassign] = useState(null);
 
+  // ── Call Report (Inbound / Outbound) ──────────────────────────────────────
+  const [callReport, setCallReport] = useState(null);
+  const [callReportLoading, setCallReportLoading] = useState(false);
+  const [callReportDate, setCallReportDate] = useState(() => {
+    // Default to today in YYYY-MM-DD
+    const d = new Date();
+    return d.toISOString().split('T')[0];
+  });
+  const [callReportDid, setCallReportDid] = useState('');
+  const [showCallReport, setShowCallReport] = useState(false);
+
+  const fetchCallReport = useCallback(async (date, did) => {
+    setCallReportLoading(true);
+    try {
+      const params = new URLSearchParams({ date });
+      if (did && did.trim()) params.append('did', did.trim());
+      const res = await axios.get(`/api/leads/call-report?${params.toString()}`);
+      if (res.data?.success) setCallReport(res.data.data);
+    } catch (err) {
+      console.error('Call report fetch error:', err);
+      toast.error('Failed to fetch call report');
+    } finally {
+      setCallReportLoading(false);
+    }
+  }, []);
+
   // Admin upload share modal
   const [showShareModal, setShowShareModal] = useState(false);
   
@@ -185,9 +211,7 @@ const AdminDashboard = () => {
     }
     
     try {
-      console.log('Admin Dashboard: Fetching stats...');
       const response = await axios.get('/api/leads/dashboard/stats');
-      console.log('Stats response:', response.data);
       // Handle the nested response structure
       const statsData = response.data?.data || response.data;
       setStats(statsData);
@@ -222,7 +246,6 @@ const AdminDashboard = () => {
 
   const fetchLeads = useCallback(async (silent = false, page = null) => {
     try {
-      console.log('Admin Dashboard: Fetching leads...');
       const currentPage = page ?? paginationRef.current.page;
       const currentLimit = paginationRef.current.limit;
       const filters = filtersRef.current;
@@ -623,7 +646,8 @@ const AdminDashboard = () => {
         lead.email?.toLowerCase().includes(searchLower) ||
         lead._id?.toLowerCase().includes(searchLower) ||
         lead.leadId?.toLowerCase().includes(searchLower) ||
-        lead.clientId?.toLowerCase().includes(searchLower)
+        lead.clientId?.toLowerCase().includes(searchLower) ||
+        lead.gtiPrimaryPhone?.includes(term)
       );
     });
     setSearchResults(filtered);
@@ -999,6 +1023,160 @@ const AdminDashboard = () => {
               </div>
             </div>
           </div>
+        </div>
+
+        {/* ── Inbound / Outbound Call Report ────────────────────────────── */}
+        <div className="bg-white rounded-xl shadow-md border border-gray-100 overflow-hidden">
+          {/* Header / toggle */}
+          <button
+            onClick={() => {
+              const next = !showCallReport;
+              setShowCallReport(next);
+              if (next && !callReport) fetchCallReport(callReportDate, callReportDid);
+            }}
+            className="w-full flex items-center justify-between px-5 py-4 bg-gradient-to-r from-violet-50 to-purple-50 hover:from-violet-100 hover:to-purple-100 transition-colors"
+          >
+            <div className="flex items-center gap-3">
+              <div className="p-2 bg-gradient-to-br from-violet-500 to-purple-600 rounded-lg shadow">
+                <BarChart3 className="h-4 w-4 text-white" />
+              </div>
+              <div className="text-left">
+                <p className="text-sm font-bold text-gray-800">Inbound / Outbound Call Report</p>
+                <p className="text-xs text-gray-500">Daily breakdown — leads formed, transferred &amp; disposed</p>
+              </div>
+            </div>
+            <svg className={`h-5 w-5 text-gray-400 transition-transform duration-300 ${showCallReport ? 'rotate-180' : ''}`} fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 9l-7 7-7-7" />
+            </svg>
+          </button>
+
+          {showCallReport && (
+            <div className="p-5 space-y-4">
+              {/* Controls */}
+              <div className="flex flex-wrap items-end gap-3">
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Date</label>
+                  <input
+                    type="date"
+                    value={callReportDate}
+                    onChange={e => setCallReportDate(e.target.value)}
+                    className="border border-gray-200 rounded-lg px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-violet-400"
+                  />
+                </div>
+                <div>
+                  <label className="block text-xs font-semibold text-gray-600 mb-1">Search by DID / Phone</label>
+                  <input
+                    type="text"
+                    value={callReportDid}
+                    onChange={e => setCallReportDid(e.target.value)}
+                    placeholder="e.g. 12092130555"
+                    className="border border-gray-200 rounded-lg px-3 py-2 text-sm w-48 focus:outline-none focus:ring-2 focus:ring-violet-400"
+                  />
+                </div>
+                <button
+                  onClick={() => fetchCallReport(callReportDate, callReportDid)}
+                  disabled={callReportLoading}
+                  className="flex items-center gap-2 px-4 py-2 bg-gradient-to-r from-violet-600 to-purple-600 text-white text-sm font-semibold rounded-lg hover:shadow-lg disabled:opacity-50 transition-all"
+                >
+                  <RefreshCw className={`h-4 w-4 ${callReportLoading ? 'animate-spin' : ''}`} />
+                  {callReportLoading ? 'Loading…' : 'Run Report'}
+                </button>
+              </div>
+
+              {/* Results */}
+              {callReport && (
+                <div className="space-y-4">
+                  <p className="text-xs text-gray-500 font-medium">Report for: <span className="text-gray-800 font-semibold">{callReport.date}</span></p>
+
+                  {/* Summary grid */}
+                  <div className="grid grid-cols-2 gap-4">
+                    {/* Inbound */}
+                    <div className="rounded-xl border-2 border-red-200 bg-red-50 p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="text-lg">📥</span>
+                        <span className="text-sm font-bold text-red-700">Inbound (GTI)</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="bg-white rounded-lg p-2 text-center shadow-sm">
+                          <p className="text-2xl font-bold text-red-600">{callReport.inbound.total}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">Leads Formed</p>
+                        </div>
+                        <div className="bg-white rounded-lg p-2 text-center shadow-sm">
+                          <p className="text-2xl font-bold text-orange-500">{callReport.inbound.transferred}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">Transferred</p>
+                        </div>
+                        <div className="bg-white rounded-lg p-2 text-center shadow-sm">
+                          <p className="text-2xl font-bold text-gray-600">{callReport.inbound.disposed}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">Disposed</p>
+                        </div>
+                        <div className="bg-white rounded-lg p-2 text-center shadow-sm">
+                          <p className="text-2xl font-bold text-green-600">{callReport.inbound.sale}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">Sale</p>
+                        </div>
+                      </div>
+                    </div>
+
+                    {/* Outbound */}
+                    <div className="rounded-xl border-2 border-blue-200 bg-blue-50 p-4">
+                      <div className="flex items-center gap-2 mb-3">
+                        <span className="text-lg">📤</span>
+                        <span className="text-sm font-bold text-blue-700">Outbound / Manual</span>
+                      </div>
+                      <div className="grid grid-cols-2 gap-2">
+                        <div className="bg-white rounded-lg p-2 text-center shadow-sm">
+                          <p className="text-2xl font-bold text-blue-600">{callReport.outbound.total}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">Leads Formed</p>
+                        </div>
+                        <div className="bg-white rounded-lg p-2 text-center shadow-sm">
+                          <p className="text-2xl font-bold text-orange-500">{callReport.outbound.transferred}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">Transferred</p>
+                        </div>
+                        <div className="bg-white rounded-lg p-2 text-center shadow-sm">
+                          <p className="text-2xl font-bold text-gray-600">{callReport.outbound.disposed}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">Disposed</p>
+                        </div>
+                        <div className="bg-white rounded-lg p-2 text-center shadow-sm">
+                          <p className="text-2xl font-bold text-green-600">{callReport.outbound.sale}</p>
+                          <p className="text-xs text-gray-500 mt-0.5">Sale</p>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Top DIDs table */}
+                  {callReport.topDids && callReport.topDids.length > 0 && (
+                    <div>
+                      <p className="text-xs font-bold text-gray-700 mb-2">Top Inbound DIDs (by volume)</p>
+                      <div className="overflow-x-auto rounded-lg border border-gray-200">
+                        <table className="min-w-full text-sm">
+                          <thead className="bg-gray-50">
+                            <tr>
+                              <th className="px-4 py-2 text-left text-xs font-semibold text-gray-500 uppercase">DID / Phone</th>
+                              <th className="px-4 py-2 text-center text-xs font-semibold text-gray-500 uppercase">Leads</th>
+                              <th className="px-4 py-2 text-center text-xs font-semibold text-gray-500 uppercase">Disposed</th>
+                            </tr>
+                          </thead>
+                          <tbody className="divide-y divide-gray-100">
+                            {callReport.topDids.map((row, i) => (
+                              <tr key={i} className="hover:bg-gray-50">
+                                <td className="px-4 py-2 font-mono text-gray-800">{row._id}</td>
+                                <td className="px-4 py-2 text-center font-bold text-red-600">{row.count}</td>
+                                <td className="px-4 py-2 text-center text-gray-600">{row.disposed}</td>
+                              </tr>
+                            ))}
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  )}
+                </div>
+              )}
+
+              {!callReport && !callReportLoading && (
+                <p className="text-sm text-gray-400 text-center py-4">Click "Run Report" to load data.</p>
+              )}
+            </div>
+          )}
         </div>
 
         {/* Lead Management Toggle */}
@@ -1441,10 +1619,10 @@ const AdminDashboard = () => {
             {/* Optimized Card-Based Layout */}
             <div className="p-3 space-y-2 max-h-[70vh] overflow-y-auto custom-scrollbar">
               {displayLeads.map((lead) => (
-                <div key={lead.leadId || lead._id} className="group bg-gradient-to-r from-gray-50 to-white rounded-lg border border-gray-200 hover:border-blue-300 hover:shadow-lg transition-all duration-200">
+                <div key={lead.leadId || lead._id} className={`group rounded-lg border transition-all duration-200 hover:shadow-lg ${lead.leadId?.startsWith('GTI') ? 'bg-gradient-to-r from-red-50 to-white border-red-200 border-l-4 border-l-red-400 hover:border-red-300' : 'bg-gradient-to-r from-gray-50 to-white border-gray-200 hover:border-blue-300'}`}>
                   <div className="p-2.5">
                     <div className="grid grid-cols-12 gap-2 items-center text-xs">
-                      {/* Lead Info - 2.5 columns */}
+                      {/* Lead Info - 2 columns */}
                       <div className="col-span-2">
                         <div className="flex items-center space-x-2">
                           <div className="h-8 w-8 bg-gradient-to-br from-blue-500 to-indigo-600 rounded-lg flex items-center justify-center shadow group-hover:scale-110 transition-transform duration-200">
@@ -1461,6 +1639,26 @@ const AdminDashboard = () => {
                             )}
                           </div>
                         </div>
+                      </div>
+
+                      {/* DID column - 1 column */}
+                      <div className="col-span-1">
+                        {lead.leadId?.startsWith('GTI') ? (
+                          <div className="space-y-0.5">
+                            <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-red-100 text-red-700 text-[10px] font-bold border border-red-300">
+                              📥 Inbound
+                            </span>
+                            {lead.gtiPrimaryPhone && (
+                              <div className="font-mono text-[10px] text-red-600 truncate" title={`DID: ${lead.gtiPrimaryPhone}`}>
+                                {lead.gtiPrimaryPhone}
+                              </div>
+                            )}
+                          </div>
+                        ) : (
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-blue-50 text-blue-500 text-[10px]" title="Outbound / Manual">
+                            📤 Outbound
+                          </span>
+                        )}
                       </div>
 
                       {/* Contact - 2 columns */}
