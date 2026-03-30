@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useRefresh } from '../contexts/RefreshContext';
 import { scrollToTop } from '../utils/scrollUtils';
@@ -8,6 +8,7 @@ import {
 } from 'lucide-react';
 import axios from '../utils/axios';
 import toast from 'react-hot-toast';
+import { useInboundCall } from '../contexts/InboundCallContext';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Pagination from '../components/Pagination';
 import VicidialCallQueue from '../components/VicidialCallQueue';
@@ -48,8 +49,39 @@ const INITIAL_GTI_DISPOSITION_STATE = {
 const Agent1Dashboard = () => {
   const { user } = useAuth();
   const { registerRefreshCallback, unregisterRefreshCallback } = useRefresh();
+  const { setActiveInboundCall, clearActiveInboundCall } = useInboundCall();
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
+
+  // ── People Search floating PiP panel ──────────────────────────────────
+  const [showSearchPanel, setShowSearchPanel] = useState(false);
+  const [searchMinimized, setSearchMinimized] = useState(false);
+  const [panelPos, setPanelPos] = useState({ x: 24, y: 120 });
+  const dragging = useRef(false);
+  const dragOffset = useRef({ x: 0, y: 0 });
+
+  const handlePanelDragStart = (e) => {
+    dragging.current = true;
+    dragOffset.current = { x: e.clientX - panelPos.x, y: e.clientY - panelPos.y };
+    e.preventDefault();
+  };
+  useEffect(() => {
+    const onMove = (e) => {
+      if (!dragging.current) return;
+      setPanelPos({
+        x: Math.max(0, e.clientX - dragOffset.current.x),
+        y: Math.max(0, e.clientY - dragOffset.current.y),
+      });
+    };
+    const onUp = () => { dragging.current = false; };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => {
+      window.removeEventListener('mousemove', onMove);
+      window.removeEventListener('mouseup', onUp);
+    };
+  }, []);
+  // ─────────────────────────────────────────────────────────────────────
   const [showEditModal, setShowEditModal] = useState(false);
   const [editingLead, setEditingLead] = useState(null);
   const [showAssignModal, setShowAssignModal] = useState(false);
@@ -170,6 +202,7 @@ const Agent1Dashboard = () => {
     setIsFormActive(false);
     setActiveVicidialCallId(null);
     setActiveVicidialDid('');
+    clearActiveInboundCall();
     resetGtiDispositionState();
     setFormErrors({ phone: '', alternatePhone: '', dispositionReason: '' });
     setFormData({
@@ -178,7 +211,7 @@ const Agent1Dashboard = () => {
       totalDebtAmount: '', numberOfCreditors: '', monthlyDebtPayment: '',
       creditScore: '', creditScoreRange: '', address: '', city: '', state: '', zipcode: '', notes: ''
     });
-  }, [resetGtiDispositionState]);
+  }, [resetGtiDispositionState, clearActiveInboundCall]);
 
   // Handler for VicidialCallQueue — loads call data into the Add Lead form
   const handleVicidialCallLoad = useCallback((callData) => {
@@ -219,7 +252,13 @@ const Agent1Dashboard = () => {
     setActiveVicidialCallId(callData._vicidialCallId || null);
     setActiveVicidialDid(callData._vicidialDid || '');
     setIsFormActive(true);
-  }, [resetGtiDispositionState]);
+
+    // Propagate inbound DID to the global context so the Layout-level banner appears
+    const did = (callData._vicidialDid || '').trim();
+    if (did) {
+      setActiveInboundCall(did, callData.name || '', callData._vicidialCallType || 'inbound');
+    }
+  }, [resetGtiDispositionState, setActiveInboundCall]);
 
   const fetchLeads = useCallback(async (page = 1) => {
     try {
@@ -606,6 +645,11 @@ const Agent1Dashboard = () => {
 
       // Add creator information
       cleanFormData.lastUpdatedBy = user?.name || 'Agent1';
+
+      // Stamp DID on the lead so it can be identified as inbound later
+      if (activeVicidialCallId && activeVicidialDid && activeVicidialDid.trim() !== '') {
+        cleanFormData.vicidialDid = activeVicidialDid.trim();
+      }
 
       if (shouldDisposeLead) {
         const resolvedDisposition =
@@ -1032,13 +1076,30 @@ const Agent1Dashboard = () => {
           <h1 className="text-2xl font-bold text-gray-900">Welcome, {user.name}</h1>
           <p className="text-gray-600">Manage your leads and track your progress</p>
         </div>
-        <button
-          onClick={() => { closeCreateLeadModal(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
-          className="inline-flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors duration-200"
-        >
-          <Plus className="h-5 w-5 mr-2" />
-          Add New Lead
-        </button>
+        <div className="flex items-center gap-3">
+          {/* US People Search quick-launch */}
+          <button
+            onClick={() => { setShowSearchPanel(true); setSearchMinimized(false); }}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all duration-200 active:scale-95 shadow-md"
+            style={{
+              background: 'linear-gradient(135deg,#f59e0b,#ef4444)',
+              boxShadow: '0 4px 12px rgba(239,68,68,0.4)',
+            }}
+            title="Open US People Search panel"
+          >
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
+            </svg>
+            People Search
+          </button>
+          <button
+            onClick={() => { closeCreateLeadModal(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
+            className="inline-flex items-center px-4 py-2 bg-primary-600 text-white rounded-lg hover:bg-primary-700 transition-colors duration-200"
+          >
+            <Plus className="h-5 w-5 mr-2" />
+            Add New Lead
+          </button>
+        </div>
       </div>
 
       {/* Vicidial Call Queue */}
@@ -1803,7 +1864,76 @@ const Agent1Dashboard = () => {
         </div>
       </div>
 
+      {/* ── Floating People Search PiP Panel ─────────────────────────── */}
+      {showSearchPanel && (
+        <div
+          className="fixed z-[9999] rounded-xl overflow-hidden shadow-2xl border border-gray-300 flex flex-col"
+          style={{
+            left: panelPos.x,
+            top: panelPos.y,
+            width: 480,
+            height: searchMinimized ? 'auto' : 520,
+          }}
+        >
+          {/* Drag handle / title bar */}
+          <div
+            onMouseDown={handlePanelDragStart}
+            className="flex items-center justify-between px-3 py-2 text-white text-sm font-bold select-none cursor-move flex-shrink-0"
+            style={{ background: 'linear-gradient(135deg,#f59e0b,#ef4444)' }}
+          >
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
+              </svg>
+              US People Search
+              <span className="text-[10px] font-normal opacity-75">(drag to move)</span>
+            </div>
+            <div className="flex items-center gap-1">
+              {/* Minimise / restore */}
+              <button
+                onClick={() => setSearchMinimized(p => !p)}
+                className="w-6 h-6 flex items-center justify-center rounded hover:bg-white/20 transition-colors"
+                title={searchMinimized ? 'Expand' : 'Minimise'}
+              >
+                {searchMinimized ? (
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" /></svg>
+                ) : (
+                  <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" /></svg>
+                )}
+              </button>
+              {/* Open in new tab */}
+              <a
+                href="https://uspeoplesearch.net/"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="w-6 h-6 flex items-center justify-center rounded hover:bg-white/20 transition-colors"
+                title="Open in full tab"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              </a>
+              {/* Close */}
+              <button
+                onClick={() => setShowSearchPanel(false)}
+                className="w-6 h-6 flex items-center justify-center rounded hover:bg-white/20 transition-colors"
+                title="Close"
+              >
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+          </div>
 
+          {/* iFrame body */}
+          {!searchMinimized && (
+            <iframe
+              src="https://uspeoplesearch.net/"
+              title="US People Search"
+              className="flex-1 w-full bg-white"
+              style={{ border: 'none', height: 472 }}
+              sandbox="allow-scripts allow-same-origin allow-forms allow-popups"
+            />
+          )}
+        </div>
+      )}
 
       {/* Edit Lead Modal */}
       {showEditModal && editingLead && (

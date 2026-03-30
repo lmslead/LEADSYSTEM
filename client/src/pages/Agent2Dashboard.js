@@ -1,4 +1,4 @@
-import React, { useState, useEffect, useCallback } from 'react';
+import React, { useState, useEffect, useCallback, useRef } from 'react';
 import { useAuth } from '../contexts/AuthContext';
 import { useSocket } from '../contexts/SocketContext';
 import { useRefresh } from '../contexts/RefreshContext';
@@ -12,7 +12,8 @@ import {
   AlertCircle,
   Search,
   BarChart3,
-  TrendingUp
+  TrendingUp,
+  RefreshCw
 } from 'lucide-react';
 import axios from '../utils/axios';
 import toast from 'react-hot-toast';
@@ -87,9 +88,33 @@ const Agent2Dashboard = () => {
   const { registerRefreshCallback, unregisterRefreshCallback } = useRefresh();
   const [leads, setLeads] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [leadsRefreshing, setLeadsRefreshing] = useState(false);
   const [todayAdminStats, setTodayAdminStats] = useState(null);
   const [selectedLead, setSelectedLead] = useState(null);
   const [showUpdateModal, setShowUpdateModal] = useState(false);
+
+  // ── People Search floating PiP panel ─────────────────────────────
+  const [showSearchPanel, setShowSearchPanel] = useState(false);
+  const [searchMinimized, setSearchMinimized] = useState(false);
+  const [panelPos, setPanelPos] = useState({ x: 24, y: 120 });
+  const dragging = useRef(false);
+  const dragOffset = useRef({ x: 0, y: 0 });
+  const handlePanelDragStart = (e) => {
+    dragging.current = true;
+    dragOffset.current = { x: e.clientX - panelPos.x, y: e.clientY - panelPos.y };
+    e.preventDefault();
+  };
+  useEffect(() => {
+    const onMove = (e) => {
+      if (!dragging.current) return;
+      setPanelPos({ x: Math.max(0, e.clientX - dragOffset.current.x), y: Math.max(0, e.clientY - dragOffset.current.y) });
+    };
+    const onUp = () => { dragging.current = false; };
+    window.addEventListener('mousemove', onMove);
+    window.addEventListener('mouseup', onUp);
+    return () => { window.removeEventListener('mousemove', onMove); window.removeEventListener('mouseup', onUp); };
+  }, []);
+  // ───────────────────────────────────────────────────────────────
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);  // New lead creation form
@@ -368,6 +393,16 @@ const Agent2Dashboard = () => {
   }, [fetchLeads, pagination.page, socket, fetchTodayAdminStats, user.role]);
 
   // Fetch persistent leads for Agent2 dashboard
+  const handleLeadsRefresh = useCallback(async () => {
+    setLeadsRefreshing(true);
+    try {
+      await fetchLeads(pagination.page);
+      toast.success('Leads refreshed', { duration: 1500, icon: '🔄' });
+    } finally {
+      setLeadsRefreshing(false);
+    }
+  }, [fetchLeads, pagination.page]);
+
   const fetchPersistentLeads = useCallback(async () => {
     try {
       console.log('Fetching persistent leads...');
@@ -1005,10 +1040,23 @@ const Agent2Dashboard = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {leads.map((lead) => (
-                <tr key={lead.leadId || lead._id} className={lead.leadId?.startsWith('GTI') ? 'bg-red-50 hover:bg-red-100 border-l-4 border-red-400' : 'hover:bg-gray-50'}>
+              {leads.map((lead) => {
+                const isInbound = !!(lead.vicidialDid && lead.vicidialDid.trim());
+                return (
+                <tr key={lead.leadId || lead._id} className={isInbound ? 'bg-red-50 hover:bg-red-100 border-l-4 border-l-red-500' : 'hover:bg-gray-50'}>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div>
+                      {/* Inbound / Outbound call-type badge */}
+                      {isInbound ? (
+                        <div className="mb-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 border border-red-300 text-red-700 text-[10px] font-bold">
+                          <span>📥</span> INBOUND
+                          <span className="font-mono text-[9px] text-red-500 ml-0.5">DID:{lead.vicidialDid}</span>
+                        </div>
+                      ) : (
+                        <div className="mb-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-500 text-[10px]">
+                          <span>📤</span> Outbound
+                        </div>
+                      )}
                       <div className="text-sm font-medium text-gray-900">{lead.name}</div>
                       <div className="text-sm text-gray-500">
                         {lead.debtCategory ? `${lead.debtCategory.charAt(0).toUpperCase() + lead.debtCategory.slice(1)} Debt` : 'N/A'}
@@ -1120,7 +1168,8 @@ const Agent2Dashboard = () => {
                     </button>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               {leads.length === 0 && (
                 <tr>
                   <td colSpan="9" className="px-6 py-8 text-center text-gray-500">
@@ -1429,16 +1478,30 @@ const Agent2Dashboard = () => {
           <h1 className="text-2xl font-bold text-gray-900">Lead Management</h1>
           <p className="text-gray-600">Follow up on leads and update their status</p>
         </div>
-        {/* Create Lead Button - Only for Agent2 */}
-        {user.role === 'agent2' && (
+        <div className="flex items-center gap-3">
+          {/* People Search PiP launcher */}
           <button
-            onClick={() => setShowCreateForm(true)}
-            className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+            onClick={() => { setShowSearchPanel(true); setSearchMinimized(false); }}
+            className="flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold text-white transition-all duration-200 active:scale-95 shadow-md"
+            style={{ background: 'linear-gradient(135deg,#f59e0b,#ef4444)', boxShadow: '0 4px 12px rgba(239,68,68,0.4)' }}
+            title="Open US People Search panel"
           >
-            <Plus className="h-4 w-4" />
-            Create Lead
+            <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+              <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
+            </svg>
+            People Search
           </button>
-        )}
+          {/* Create Lead Button - Only for Agent2 */}
+          {user.role === 'agent2' && (
+            <button
+              onClick={() => setShowCreateForm(true)}
+              className="bg-blue-600 text-white px-4 py-2 rounded-lg hover:bg-blue-700 transition-colors flex items-center gap-2"
+            >
+              <Plus className="h-4 w-4" />
+              Create Lead
+            </button>
+          )}
+        </div>
       </div>
 
       {/* Today's Real-Time Stat Cards - Only for Admin/SuperAdmin */}
@@ -1633,40 +1696,42 @@ const Agent2Dashboard = () => {
 
       {/* Tabs Navigation - Only for Agent2 */}
       {user.role === 'agent2' && (
-        <div className="border-b border-gray-200">
-          <nav className="-mb-px flex space-x-8">
-            <button
-              onClick={() => setActiveTab('today')}
-              className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'today'
-                  ? 'border-primary-500 text-primary-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              Today's Leads ({stats.todaysLeads?.length || 0})
-            </button>
-            <button
-              onClick={() => setActiveTab('pending-qualification')}
-              className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'pending-qualification'
-                  ? 'border-yellow-500 text-yellow-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              Pending Qualification ({stats.pendingQualificationCount || 0})
-            </button>
-            <button
-              onClick={() => setActiveTab('callback-needed')}
-              className={`py-2 px-1 border-b-2 font-medium text-sm ${
-                activeTab === 'callback-needed'
-                  ? 'border-orange-500 text-orange-600'
-                  : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
-              }`}
-            >
-              Callback Needed ({stats.callbackNeededCount || 0})
-            </button>
-          </nav>
-        </div>
+        <>
+          <div className="border-b border-gray-200">
+            <nav className="-mb-px flex space-x-8">
+              <button
+                onClick={() => setActiveTab('today')}
+                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'today'
+                    ? 'border-primary-500 text-primary-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                Today's Leads ({stats.todaysLeads?.length || 0})
+              </button>
+              <button
+                onClick={() => setActiveTab('pending-qualification')}
+                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'pending-qualification'
+                    ? 'border-yellow-500 text-yellow-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                Pending Qualification ({stats.pendingQualificationCount || 0})
+              </button>
+              <button
+                onClick={() => setActiveTab('callback-needed')}
+                className={`py-2 px-1 border-b-2 font-medium text-sm ${
+                  activeTab === 'callback-needed'
+                    ? 'border-orange-500 text-orange-600'
+                    : 'border-transparent text-gray-500 hover:text-gray-700 hover:border-gray-300'
+                }`}
+              >
+                Callback Needed ({stats.callbackNeededCount || 0})
+              </button>
+            </nav>
+          </div>
+        </>
       )}
 
       {/* Filters - Only show for today's leads tab */}
@@ -1809,9 +1874,33 @@ const Agent2Dashboard = () => {
           <>
             {/* Today's Leads Table */}
             <div className="bg-white rounded-lg shadow-sm border border-gray-200">
-              <div className="px-6 py-4 border-b border-gray-200">
-                <h3 className="text-lg font-medium text-gray-900">Today's Assigned Leads ({stats.todaysLeads?.length || 0})</h3>
-                <p className="text-sm text-gray-600 mt-1">Leads assigned to you today</p>
+              <div className="px-6 py-4 border-b border-gray-200 flex items-center justify-between">
+                <div>
+                  <h3 className="text-lg font-medium text-gray-900">Today's Assigned Leads ({stats.todaysLeads?.length || 0})</h3>
+                  <p className="text-sm text-gray-600 mt-1">Leads assigned to you today</p>
+                </div>
+                {/* Centred refresh button */}
+                <div className="flex-1 flex justify-center">
+                  <button
+                    onClick={handleLeadsRefresh}
+                    disabled={leadsRefreshing}
+                    className="flex items-center gap-2 px-5 py-2.5 rounded-2xl text-sm font-extrabold text-white tracking-wide transition-all duration-200 active:scale-95 disabled:opacity-50 disabled:cursor-not-allowed"
+                    style={{
+                      background: leadsRefreshing
+                        ? 'linear-gradient(135deg,#f97316,#ef4444)'
+                        : 'linear-gradient(135deg,#22c55e,#06b6d4)',
+                      boxShadow: leadsRefreshing
+                        ? '0 4px 14px rgba(239,68,68,0.45)'
+                        : '0 4px 18px rgba(34,197,94,0.55)',
+                    }}
+                    title="Fetch latest leads from server"
+                  >
+                    <RefreshCw className={`h-4 w-4 ${leadsRefreshing ? 'animate-spin' : ''}`} />
+                    {leadsRefreshing ? 'Refreshing...' : '↻ Refresh Real-Time Data'}
+                  </button>
+                </div>
+                {/* Spacer keeps title left-aligned and button truly centred */}
+                <div className="w-40" />
               </div>
         
         <div className="overflow-x-auto">
@@ -1848,10 +1937,23 @@ const Agent2Dashboard = () => {
               </tr>
             </thead>
             <tbody className="bg-white divide-y divide-gray-200">
-              {stats.todaysLeads?.map((lead) => (
-                <tr key={lead.leadId || lead._id} className={lead.leadId?.startsWith('GTI') ? 'bg-red-50 hover:bg-red-100 border-l-4 border-red-400' : 'hover:bg-gray-50'}>
+              {stats.todaysLeads?.map((lead) => {
+                const isInbound = !!(lead.vicidialDid && lead.vicidialDid.trim());
+                return (
+                <tr key={lead.leadId || lead._id} className={isInbound ? 'bg-red-50 hover:bg-red-100 border-l-4 border-l-red-500' : 'hover:bg-gray-50'}>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div>
+                      {/* Inbound / Outbound call-type badge */}
+                      {isInbound ? (
+                        <div className="mb-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-red-100 border border-red-300 text-red-700 text-[10px] font-bold">
+                          <span>📥</span> INBOUND
+                          <span className="font-mono text-[9px] text-red-500 ml-0.5">DID:{lead.vicidialDid}</span>
+                        </div>
+                      ) : (
+                        <div className="mb-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-500 text-[10px]">
+                          <span>📤</span> Outbound
+                        </div>
+                      )}
                       <div className="text-sm font-medium text-gray-900">{lead.name}</div>
                       <div className="text-sm text-gray-500">
                         {lead.debtCategory ? `${lead.debtCategory.charAt(0).toUpperCase() + lead.debtCategory.slice(1)} Debt` : 'N/A'}
@@ -1963,7 +2065,8 @@ const Agent2Dashboard = () => {
                     </button>
                   </td>
                 </tr>
-              ))}
+                );
+              })}
               {leads.length === 0 && (
                 <tr>
                   <td colSpan="6" className="px-6 py-8 text-center text-gray-500">
@@ -3324,6 +3427,33 @@ const Agent2Dashboard = () => {
               </form>
             </div>
           </div>
+        </div>
+      )}
+
+      {/* Floating People Search PiP Panel */}
+      {showSearchPanel && (
+        <div className="fixed z-[9999] rounded-xl overflow-hidden shadow-2xl border border-gray-300 flex flex-col" style={{ left: panelPos.x, top: panelPos.y, width: 480, height: searchMinimized ? 'auto' : 520 }}>
+          <div onMouseDown={handlePanelDragStart} className="flex items-center justify-between px-3 py-2 text-white text-sm font-bold select-none cursor-move flex-shrink-0" style={{ background: 'linear-gradient(135deg,#f59e0b,#ef4444)' }}>
+            <div className="flex items-center gap-2">
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" /></svg>
+              US People Search
+              <span className="text-[10px] font-normal opacity-75">(drag to move)</span>
+            </div>
+            <div className="flex items-center gap-1">
+              <button onClick={() => setSearchMinimized(p => !p)} className="w-6 h-6 flex items-center justify-center rounded hover:bg-white/20 transition-colors" title={searchMinimized ? 'Expand' : 'Minimise'}>
+                {searchMinimized ? <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M4 8h16M4 16h16" /></svg> : <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M20 12H4" /></svg>}
+              </button>
+              <a href="https://uspeoplesearch.net/" target="_blank" rel="noopener noreferrer" className="w-6 h-6 flex items-center justify-center rounded hover:bg-white/20 transition-colors" title="Open in full tab">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10 6H6a2 2 0 00-2 2v10a2 2 0 002 2h10a2 2 0 002-2v-4M14 4h6m0 0v6m0-6L10 14" /></svg>
+              </a>
+              <button onClick={() => setShowSearchPanel(false)} className="w-6 h-6 flex items-center justify-center rounded hover:bg-white/20 transition-colors" title="Close">
+                <svg className="w-3.5 h-3.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+              </button>
+            </div>
+          </div>
+          {!searchMinimized && (
+            <iframe src="https://uspeoplesearch.net/" title="US People Search" className="flex-1 w-full bg-white" style={{ border: 'none', height: 472 }} sandbox="allow-scripts allow-same-origin allow-forms allow-popups" />
+          )}
         </div>
       )}
     </div>

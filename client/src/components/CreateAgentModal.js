@@ -7,6 +7,8 @@ import { useAuth } from '../contexts/AuthContext';
 const CreateAgentModal = ({ isOpen, onClose, onAgentCreated, organizations = [] }) => {
   const { user } = useAuth();
   const isSuperAdmin = user?.role === 'superadmin';
+  const isReddingtonAdmin = user?.organization?.name === 'REDDINGTON GLOBAL CONSULTANCY';
+  const canPickOrg = isSuperAdmin || isReddingtonAdmin;
 
   const [formData, setFormData] = useState({
     name: '',
@@ -49,7 +51,7 @@ const CreateAgentModal = ({ isOpen, onClose, onAgentCreated, organizations = [] 
       newErrors.email = 'Please enter a valid email';
     }
 
-    if (isSuperAdmin && !formData.organization) {
+    if (canPickOrg && !formData.organization) {
       newErrors.organization = 'Organization is required';
     }
 
@@ -85,7 +87,7 @@ const CreateAgentModal = ({ isOpen, onClose, onAgentCreated, organizations = [] 
         role: formData.role,
         vicidialAgentId: formData.vicidialAgentId.trim() || undefined
       };
-      if (isSuperAdmin && formData.organization) {
+      if (canPickOrg && formData.organization) {
         payload.organization = formData.organization;
       }
       const response = await axios.post('/api/auth/create-agent', payload);
@@ -172,8 +174,8 @@ const CreateAgentModal = ({ isOpen, onClose, onAgentCreated, organizations = [] 
             {errors.email && <p className="text-red-500 text-xs mt-1">{errors.email}</p>}
           </div>
 
-          {/* Organization Field — SuperAdmin only */}
-          {isSuperAdmin && (
+          {/* Organization Field — SuperAdmin and Reddington admin */}
+          {canPickOrg && (
             <div>
               <label className="block text-sm font-medium text-gray-700 mb-1">
                 Organization <span className="text-red-500">*</span>

@@ -74,6 +74,14 @@ const leadSchema = new mongoose.Schema({
   gtiLastPostback: {
     type: Date,
   },
+  // Vicidial DID — populated when the lead was created from an inbound Vicidial call.
+  // Presence of this field = inbound call; absence = outbound / manual.
+  vicidialDid: {
+    type: String,
+    trim: true,
+    index: true,
+  },
+
   gtiPostbackHistory: [{
     eventType: {
       type: String,

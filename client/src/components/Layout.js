@@ -2,6 +2,7 @@ import React, { useState, useEffect } from 'react';
 import { Outlet, Link, useLocation, useNavigate } from 'react-router-dom';
 import { useAuth } from '../contexts/AuthContext';
 import { useRefresh } from '../contexts/RefreshContext';
+import { useInboundCall } from '../contexts/InboundCallContext';
 import { scrollToTop } from '../utils/scrollUtils';
 import { 
   Home, 
@@ -23,6 +24,7 @@ const Layout = ({ onDashboardRefresh }) => {
   const [sidebarOpen, setSidebarOpen] = useState(false);
   const { user, logout, loading } = useAuth();
   const { triggerRefresh } = useRefresh();
+  const { activeInbound, clearActiveInboundCall } = useInboundCall();
   const location = useLocation();
   const navigate = useNavigate();
 
@@ -265,6 +267,31 @@ const Layout = ({ onDashboardRefresh }) => {
             </div>
           </div>
         </header>
+
+        {/* Global inbound call banner — visible on every page across LMS */}
+        {activeInbound.isActive && activeInbound.did && (
+          <div className="flex items-center gap-3 bg-red-600 px-4 py-2.5 text-white animate-pulse z-50 shadow-md">
+            <span className="w-2.5 h-2.5 rounded-full bg-white inline-block flex-shrink-0" style={{ animation: 'none', opacity: 1 }} />
+            <span className="text-sm font-bold tracking-wide">📥 INBOUND CALL</span>
+            <span className="font-mono text-sm bg-red-700 px-2 py-0.5 rounded">
+              DID: {activeInbound.did}
+            </span>
+            {activeInbound.callerName && (
+              <span className="text-red-100 text-sm truncate">
+                — {activeInbound.callerName}
+              </span>
+            )}
+            <button
+              onClick={clearActiveInboundCall}
+              className="ml-auto flex-shrink-0 text-red-200 hover:text-white transition-colors p-1 rounded hover:bg-red-700"
+              title="Dismiss banner"
+            >
+              <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" />
+              </svg>
+            </button>
+          </div>
+        )}
 
         {/* Main content area */}
         <main className="flex-1 overflow-y-auto bg-gray-50">

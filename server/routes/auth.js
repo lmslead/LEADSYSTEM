@@ -1,8 +1,18 @@
 const express = require('express');
 const { body } = require('express-validator');
 const User = require('../models/User');
+const Organization = require('../models/Organization');
 const { protect, generateToken } = require('../middleware/auth');
 const handleValidationErrors = require('../middleware/validation');
+
+// Helper: check if a user is the Reddington Global Consultancy admin
+const isReddingtonAdminUser = async (user) => {
+  if (user.role !== 'admin' || !user.organization) return false;
+  try {
+    const org = await Organization.findById(user.organization).lean();
+    return !!(org && org.name === 'REDDINGTON GLOBAL CONSULTANCY');
+  } catch { return false; }
+};
 
 const router = express.Router();
 
@@ -143,10 +153,16 @@ router.post('/create-agent', protect, registerValidation, handleValidationErrors
     }
 
     // For admin users, agents must be in same organization
+    // Exception: Reddington admin may specify any org (like superadmin)
     // For super admin, organization must be provided in the request body
     let organizationId = null;
     if (req.user.role === 'admin') {
-      organizationId = req.user.organization;
+      const isReddington = await isReddingtonAdminUser(req.user);
+      if (isReddington && (req.body.organization || '').toString().trim()) {
+        organizationId = (req.body.organization || '').toString().trim();
+      } else {
+        organizationId = req.user.organization;
+      }
     } else if (req.user.role === 'superadmin') {
       const orgId = (req.body.organization || '').toString().trim();
       if (!orgId) {
@@ -479,10 +495,16 @@ router.get('/agents', protect, async (req, res) => {
     }
 
     let query = { role: { $in: ['agent1', 'agent2'] } };
-    
-    // If admin, only show agents from their organization
+
+    // Reddington admin sees all orgs (like superadmin); regular admin sees own org only
     if (req.user.role === 'admin') {
-      query.organization = req.user.organization;
+      const isReddington = await isReddingtonAdminUser(req.user);
+      if (isReddington) {
+        // Optionally filter by org when provided
+        if (req.query.organization) query.organization = req.query.organization;
+      } else {
+        query.organization = req.user.organization;
+      }
     }
 
     // SuperAdmin can filter by organization

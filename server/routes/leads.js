@@ -1233,7 +1233,7 @@ router.get('/', protect, [
       assignedAt: 1, assignmentNotes: 1,
       createdBy: 1, updatedBy: 1, assignedTo: 1, assignedBy: 1,
       organization: 1, disposedBy: 1, duplicateDetectedBy: 1,
-      gtiCallUuid: 1, gtiPrimaryPhone: 1,
+      gtiCallUuid: 1, gtiPrimaryPhone: 1, vicidialDid: 1,
       clientId: 1, conversionValue: 1, convertedAt: 1,
       lastUpdatedBy: 1, lastUpdatedAt: 1,
       createdAt: 1, updatedAt: 1
@@ -1410,16 +1410,15 @@ router.get('/call-report', protect, authorize('admin', 'superadmin'), async (req
 
     const dateFilter = { createdAt: { $gte: startOfDay, $lte: endOfDay } };
 
-    // GTI leads (inbound) = leadId starts with 'GTI'
-    // Non-GTI leads (outbound) = all others, computed as grandTotal - allGTI to avoid $not regex (cannot use index)
+    // Inbound leads = leads with a vicidialDid (DID present means call came in on that number)
+    // Outbound leads = all others, computed as grandTotal - inbound to avoid $not index issues
     const baseFilter = { ...orgFilter, ...dateFilter };
-    const allGTIFilter = { ...baseFilter, leadId: { $regex: '^GTI', $options: 'i' } };
+    const allInboundFilter = { ...baseFilter, vicidialDid: { $exists: true, $ne: '' } };
 
     // inboundFilter may be further narrowed by optional DID search
-    const inboundFilter = { ...allGTIFilter };
+    const inboundFilter = { ...allInboundFilter };
     if (did && did.trim()) {
-      const didRegex = { $regex: did.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
-      inboundFilter.$or = [{ gtiPrimaryPhone: didRegex }, { phone: didRegex }];
+      inboundFilter.vicidialDid = { $regex: did.trim().replace(/[.*+?^${}()|[\]\\]/g, '\\$&'), $options: 'i' };
     }
 
     // When no DID filter, inbound === allGTI so skip duplicate allGTI queries
@@ -1434,10 +1433,10 @@ router.get('/call-report', protect, authorize('admin', 'superadmin'), async (req
       grandDisposed,
       grandTransferred,
       grandSale,
-      allGTITotal,
-      allGTIDisposed,
-      allGTITransferred,
-      allGTISale,
+      allInboundTotal,
+      allInboundDisposed,
+      allInboundTransferred,
+      allInboundSale,
       topDids,
     ] = await Promise.all([
       Lead.countDocuments(inboundFilter),
@@ -1448,29 +1447,29 @@ router.get('/call-report', protect, authorize('admin', 'superadmin'), async (req
       Lead.countDocuments({ ...baseFilter, isDisposed: true }),
       Lead.countDocuments({ ...baseFilter, assignedTo: { $exists: true, $ne: null } }),
       Lead.countDocuments({ ...baseFilter, leadProgressStatus: { $in: ['SALE', 'Immediate Enrollment', 'Sale Long Play'] } }),
-      hasDid ? Lead.countDocuments(allGTIFilter) : Promise.resolve(null),
-      hasDid ? Lead.countDocuments({ ...allGTIFilter, isDisposed: true }) : Promise.resolve(null),
-      hasDid ? Lead.countDocuments({ ...allGTIFilter, assignedTo: { $exists: true, $ne: null } }) : Promise.resolve(null),
-      hasDid ? Lead.countDocuments({ ...allGTIFilter, leadProgressStatus: { $in: ['SALE', 'Immediate Enrollment', 'Sale Long Play'] } }) : Promise.resolve(null),
-      // Top DIDs for the day (inbound only)
+      hasDid ? Lead.countDocuments(allInboundFilter) : Promise.resolve(null),
+      hasDid ? Lead.countDocuments({ ...allInboundFilter, isDisposed: true }) : Promise.resolve(null),
+      hasDid ? Lead.countDocuments({ ...allInboundFilter, assignedTo: { $exists: true, $ne: null } }) : Promise.resolve(null),
+      hasDid ? Lead.countDocuments({ ...allInboundFilter, leadProgressStatus: { $in: ['SALE', 'Immediate Enrollment', 'Sale Long Play'] } }) : Promise.resolve(null),
+      // Top DIDs for the day (inbound only — grouped by vicidialDid)
       Lead.aggregate([
-        { $match: { ...orgFilter, ...dateFilter, leadId: { $regex: '^GTI', $options: 'i' }, gtiPrimaryPhone: { $exists: true, $ne: '' } } },
-        { $group: { _id: '$gtiPrimaryPhone', count: { $sum: 1 }, disposed: { $sum: { $cond: ['$isDisposed', 1, 0] } } } },
+        { $match: { ...orgFilter, ...dateFilter, vicidialDid: { $exists: true, $ne: '' } } },
+        { $group: { _id: '$vicidialDid', count: { $sum: 1 }, disposed: { $sum: { $cond: ['$isDisposed', 1, 0] } } } },
         { $sort: { count: -1 } },
         { $limit: 10 },
       ]),
     ]);
 
-    // Outbound = grand total - all GTI (not the DID-filtered inbound)
-    const gtiTotal = allGTITotal !== null ? allGTITotal : inboundTotal;
-    const gtiDisposed = allGTIDisposed !== null ? allGTIDisposed : inboundDisposed;
-    const gtiTransferred = allGTITransferred !== null ? allGTITransferred : inboundTransferred;
-    const gtiSale = allGTISale !== null ? allGTISale : inboundSale;
+    // Outbound = grand total - all inbound (not the DID-filtered subset)
+    const allInbTotal = allInboundTotal !== null ? allInboundTotal : inboundTotal;
+    const allInbDisposed = allInboundDisposed !== null ? allInboundDisposed : inboundDisposed;
+    const allInbTransferred = allInboundTransferred !== null ? allInboundTransferred : inboundTransferred;
+    const allInbSale = allInboundSale !== null ? allInboundSale : inboundSale;
 
-    const outboundTotal = grandTotal - gtiTotal;
-    const outboundDisposed = grandDisposed - gtiDisposed;
-    const outboundTransferred = grandTransferred - gtiTransferred;
-    const outboundSale = grandSale - gtiSale;
+    const outboundTotal = grandTotal - allInbTotal;
+    const outboundDisposed = grandDisposed - allInbDisposed;
+    const outboundTransferred = grandTransferred - allInbTransferred;
+    const outboundSale = grandSale - allInbSale;
 
     res.status(200).json({
       success: true,

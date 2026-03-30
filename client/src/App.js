@@ -4,6 +4,7 @@ import { Toaster } from 'react-hot-toast';
 import { AuthProvider } from './contexts/AuthContext';
 import { SocketProvider } from './contexts/SocketContext';
 import { RefreshProvider } from './contexts/RefreshContext';
+import { InboundCallProvider } from './contexts/InboundCallContext';
 import ProtectedRoute from './components/ProtectedRoute';
 import Layout from './components/Layout';
 import Login from './pages/Login';
@@ -21,6 +22,7 @@ function App() {
       <AuthProvider>
         <RefreshProvider>
           <SocketProvider>
+          <InboundCallProvider>
           <Router>
             <Toaster
               position="top-right"
@@ -103,6 +105,7 @@ function App() {
               <Route path="*" element={<Navigate to="/" replace />} />
             </Routes>
           </Router>
+          </InboundCallProvider>
         </SocketProvider>
         </RefreshProvider>
       </AuthProvider>
