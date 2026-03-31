@@ -1654,7 +1654,7 @@ const AdminDashboard = () => {
             {/* Optimized Card-Based Layout */}
             <div className="p-3 space-y-2 max-h-[70vh] overflow-y-auto custom-scrollbar">
               {displayLeads.map((lead) => (
-                <div key={lead.leadId || lead._id} className={`group rounded-lg border transition-all duration-200 hover:shadow-lg ${!!(lead.vicidialDid && lead.vicidialDid.trim()) ? 'bg-gradient-to-r from-red-50 to-white border-red-200 border-l-4 border-l-red-400 hover:border-red-300' : 'bg-gradient-to-r from-gray-50 to-white border-gray-200 hover:border-blue-300'}`}>
+                <div key={lead.leadId || lead._id} className={`group rounded-lg border transition-all duration-200 hover:shadow-lg ${!!(lead.vicidialDid && lead.vicidialDid.trim()) ? 'bg-gradient-to-r from-red-50 to-white border-red-200 border-l-4 border-l-red-500 hover:border-red-300' : 'bg-gradient-to-r from-blue-50 to-white border-blue-200 border-l-4 border-l-blue-500 hover:border-blue-300'}`}>
                   <div className="p-2.5">
                     <div className="grid grid-cols-12 gap-2 items-center text-xs">
                       {/* Lead Info - 2 columns */}
@@ -1688,7 +1688,7 @@ const AdminDashboard = () => {
                             </div>
                           </div>
                         ) : (
-                          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-blue-50 text-blue-500 text-[10px]" title="Outbound / Manual">
+                          <span className="inline-flex items-center px-1.5 py-0.5 rounded bg-blue-100 text-blue-700 text-[10px] font-bold border border-blue-300" title="Outbound / Manual">
                             📤 Outbound
                           </span>
                         )}

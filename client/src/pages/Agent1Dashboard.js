@@ -4,7 +4,8 @@ import { useRefresh } from '../contexts/RefreshContext';
 import { scrollToTop } from '../utils/scrollUtils';
 import { 
   Plus, 
-  Users
+  Users,
+  StickyNote
 } from 'lucide-react';
 import axios from '../utils/axios';
 import toast from 'react-hot-toast';
@@ -12,6 +13,7 @@ import { useInboundCall } from '../contexts/InboundCallContext';
 import LoadingSpinner from '../components/LoadingSpinner';
 import Pagination from '../components/Pagination';
 import VicidialCallQueue from '../components/VicidialCallQueue';
+import AgentNotesPad from '../components/AgentNotesModal';
 import { formatEasternTimeForDisplay, getEasternStartOfDay, getEasternEndOfDay } from '../utils/dateUtils';
 
 const GTI_DISPOSITION_OPTIONS = [
@@ -25,10 +27,10 @@ const GTI_DISPOSITION_OPTIONS = [
   'N - No Answer',
   'NI - Not Interested',
   'NP - No Pitch No Price',
-  'CB - Callback',
-  'DA - Dead Air',
-  'DOK - Debt Over 15K',
+  'SALE - Sale Made',
+  'XFER - Call Transferred',
   'HLCB - Hot Lead Callback',
+  'HLEAD - Hot Lead',
   'HU - Hangup',
   'LB - Language Barrier',
   'Loan - LOAN',
@@ -36,9 +38,8 @@ const GTI_DISPOSITION_OPTIONS = [
   'NIAP - Not Interested After Pitch',
   'NIBP - Not Interested Before Pitch',
   'NQ - Not Qualified',
-  'Ringing',
-  'Wrong Number',
-  'Other'
+  'Ring - Ringing',
+  'WNU - Wrong Number',
 ];
 
 const INITIAL_GTI_DISPOSITION_STATE = {
@@ -96,6 +97,14 @@ const Agent1Dashboard = () => {
   const [activeVicidialCallId, setActiveVicidialCallId] = useState(null);
   // DID number from inbound call (present = inbound, absent = outbound)
   const [activeVicidialDid, setActiveVicidialDid] = useState('');
+  // Notes modal state
+  const [showNotesModal, setShowNotesModal] = useState(false);
+  // eslint-disable-next-line no-unused-vars
+  const [notesPos, setNotesPos] = useState({ x: window.innerWidth - 390, y: 80 });
+  // Callback date picker modal
+  const [showCallbackDateModal, setShowCallbackDateModal] = useState(false);
+  const [callbackDatePicker, setCallbackDatePicker] = useState('');
+  const confirmedCallbackDateRef = useRef(null);
   // Track if form is currently active to prevent multiple forms from opening
   const [isFormActive, setIsFormActive] = useState(false);
 
@@ -264,7 +273,7 @@ const Agent1Dashboard = () => {
     try {
       // Add cache-busting parameter to force fresh data
       const timestamp = new Date().getTime();
-      const response = await axios.get(`/api/leads?page=${page}&limit=${pagination.limit}&_t=${timestamp}`);
+      const response = await axios.get(`/api/leads?page=${page}&limit=${pagination.limit}&dateFilterType=today&_t=${timestamp}`);
       console.log('Fetch leads response:', response.data);
       const responseData = response.data?.data;
       const leadsData = responseData?.leads;
@@ -539,11 +548,23 @@ const Agent1Dashboard = () => {
   };
 
   const handleSubmit = async (e) => {
-    e.preventDefault();
+    if (e && e.preventDefault) e.preventDefault();
     
     // Validate form before submission
     if (!validateForm()) {
       toast.error('Please fix the validation errors before submitting');
+      return;
+    }
+
+    // Intercept callback dispositions — show date picker if not yet confirmed
+    const _selDisp = (gtiDispositionState.dispositionReason || '').trim();
+    const CB_KEYS = ['callbk', 'callback', 'hlcb'];
+    if (_selDisp && CB_KEYS.some((k) => _selDisp.toLowerCase().includes(k)) && !confirmedCallbackDateRef.current) {
+      const tomorrow = new Date();
+      tomorrow.setDate(tomorrow.getDate() + 1);
+      const tomorrowStr = `${tomorrow.getFullYear()}-${String(tomorrow.getMonth() + 1).padStart(2, '0')}-${String(tomorrow.getDate()).padStart(2, '0')}`;
+      setCallbackDatePicker(tomorrowStr);
+      setShowCallbackDateModal(true);
       return;
     }
     
@@ -693,6 +714,45 @@ const Agent1Dashboard = () => {
       } else {
         toast.success('Lead added successfully!');
       }
+
+      // ── Auto-create a note when disposition is a callback type ───────────
+      const CALLBACK_KEYWORDS = ['callbk', 'callback', 'hlcb'];
+      const isCallbackDisposition =
+        shouldDisposeLead &&
+        CALLBACK_KEYWORDS.some((k) => selectedDisposition.toLowerCase().includes(k));
+
+      if (isCallbackDisposition) {
+        const today = new Date();
+        const todayStr = `${today.getFullYear()}-${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+        const noteDate = confirmedCallbackDateRef.current || todayStr;
+        confirmedCallbackDateRef.current = null; // reset after use
+        const noteTitle = `Callback: ${formData.name || 'Unknown'} – ${formData.phone || ''}`;
+        const noteLines = [
+          '📞 CALLBACK REMINDER',
+          '──────────────────────',
+          `Name:        ${formData.name || '—'}`,
+          `Phone:       ${formData.phone || '—'}`,
+          formData.alternatePhone ? `Alt Phone:   ${formData.alternatePhone}` : null,
+          formData.email          ? `Email:       ${formData.email}`          : null,
+          `Disposition: ${selectedDisposition}`,
+          '',
+          formData.totalDebtAmount ? `Debt Amount: $${formData.totalDebtAmount}` : null,
+          formData.debtCategory    ? `Debt Type:   ${formData.debtCategory}`    : null,
+          (formData.city || formData.state)
+            ? `Location:    ${[formData.city, formData.state].filter(Boolean).join(', ')}` : null,
+          '',
+          formData.notes ? `Notes:\n${formData.notes}` : null,
+        ].filter((l) => l !== null).join('\n');
+
+        try {
+          await axios.post('/api/notes', { title: noteTitle, content: noteLines, noteDate });
+          toast.success('📝 Callback note saved to My Notes', { duration: 4000 });
+          setShowNotesModal(true);
+        } catch (noteErr) {
+          console.error('Auto callback note failed:', noteErr);
+        }
+      }
+      // ─────────────────────────────────────────────────────────────────────
 
       setFormData({
         name: '',
@@ -1091,6 +1151,14 @@ const Agent1Dashboard = () => {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
             </svg>
             People Search
+          </button>
+          <button
+            onClick={() => setShowNotesModal(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all duration-200 active:scale-95 shadow-md bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600"
+            title="Open My Notes"
+          >
+            <StickyNote className="h-4 w-4" />
+            My Notes
           </button>
           <button
             onClick={() => { closeCreateLeadModal(); window.scrollTo({ top: 0, behavior: 'smooth' }); }}
@@ -2460,6 +2528,94 @@ const Agent1Dashboard = () => {
           </div>
         </div>
       )}
+
+      {/* Agent Notes PiP */}
+      <AgentNotesPad 
+        show={showNotesModal}
+        onClose={() => setShowNotesModal(false)}
+        initialPos={notesPos}
+      />
+
+      {/* ── Callback Date Picker Modal ─────────────────────────────────── */}
+      {showCallbackDateModal && (() => {
+        const dispLabel = (gtiDispositionState.dispositionReason || '').trim();
+        const today = new Date();
+        const todayStr = `${today.getFullYear()}-${String(today.getMonth()+1).padStart(2,'0')}-${String(today.getDate()).padStart(2,'0')}`;
+        return (
+          <div className="fixed inset-0 z-[10000] flex items-center justify-center">
+            {/* Backdrop */}
+            <div className="absolute inset-0 bg-black/50 backdrop-blur-sm" onClick={() => setShowCallbackDateModal(false)} />
+            {/* Card */}
+            <div className="relative bg-white rounded-2xl shadow-2xl border border-indigo-200 w-full max-w-sm mx-4 overflow-hidden">
+              {/* Header */}
+              <div className="px-5 py-4 text-white" style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)' }}>
+                <div className="flex items-center gap-3">
+                  <div className="w-9 h-9 rounded-full bg-white/20 flex items-center justify-center flex-shrink-0">
+                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                    </svg>
+                  </div>
+                  <div>
+                    <p className="font-bold text-base leading-tight">Set Callback Date</p>
+                    <p className="text-xs text-white/75 leading-tight">When should this lead be called back?</p>
+                  </div>
+                </div>
+              </div>
+              {/* Lead preview */}
+              <div className="px-5 py-3 bg-indigo-50 border-b border-indigo-100">
+                <div className="flex items-center gap-3">
+                  <div className="w-8 h-8 rounded-full bg-indigo-200 flex items-center justify-center flex-shrink-0">
+                    <svg className="w-4 h-4 text-indigo-700" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                      <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M16 7a4 4 0 11-8 0 4 4 0 018 0zM12 14a7 7 0 00-7 7h14a7 7 0 00-7-7z" />
+                    </svg>
+                  </div>
+                  <div className="min-w-0">
+                    <p className="text-sm font-bold text-gray-800 truncate">{formData.name || 'Unknown Caller'}</p>
+                    <p className="text-xs text-gray-500">{formData.phone || '—'}{formData.alternatePhone ? ` · ${formData.alternatePhone}` : ''}</p>
+                  </div>
+                  <span className="ml-auto text-[10px] px-2 py-0.5 rounded-full bg-indigo-100 text-indigo-700 font-semibold border border-indigo-200 whitespace-nowrap">{dispLabel}</span>
+                </div>
+              </div>
+              {/* Date input */}
+              <div className="px-5 py-4">
+                <label className="block text-xs font-semibold text-gray-600 uppercase tracking-wide mb-2">Callback Date</label>
+                <input
+                  type="date"
+                  min={todayStr}
+                  value={callbackDatePicker}
+                  onChange={(e) => setCallbackDatePicker(e.target.value)}
+                  className="w-full px-4 py-3 border-2 border-indigo-300 rounded-xl text-sm font-semibold text-gray-800 focus:ring-2 focus:ring-indigo-400 focus:border-transparent outline-none bg-indigo-50"
+                  autoFocus
+                />
+                <p className="text-xs text-gray-400 mt-1.5">A note with the caller's details will be saved to that date in My Notes.</p>
+              </div>
+              {/* Actions */}
+              <div className="px-5 pb-5 flex gap-3">
+                <button
+                  type="button"
+                  onClick={() => setShowCallbackDateModal(false)}
+                  className="flex-1 py-2.5 text-sm font-semibold text-gray-600 border border-gray-200 rounded-xl hover:bg-gray-50 transition-colors"
+                >
+                  Cancel
+                </button>
+                <button
+                  type="button"
+                  disabled={!callbackDatePicker}
+                  onClick={() => {
+                    confirmedCallbackDateRef.current = callbackDatePicker;
+                    setShowCallbackDateModal(false);
+                    handleSubmit({ preventDefault: () => {} });
+                  }}
+                  className="flex-1 py-2.5 text-sm font-bold text-white rounded-xl transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  style={{ background: 'linear-gradient(135deg,#6366f1,#4f46e5)' }}
+                >
+                  Confirm &amp; Dispose
+                </button>
+              </div>
+            </div>
+          </div>
+        );
+      })()}
     </div>
   );
 };

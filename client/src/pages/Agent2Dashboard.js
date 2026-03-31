@@ -13,11 +13,13 @@ import {
   Search,
   BarChart3,
   TrendingUp,
-  RefreshCw
+  RefreshCw,
+  StickyNote
 } from 'lucide-react';
 import axios from '../utils/axios';
 import toast from 'react-hot-toast';
 import LoadingSpinner from '../components/LoadingSpinner';
+import AgentNotesPad from '../components/AgentNotesModal';
 import Pagination from '../components/Pagination';
 import { isGtiOrganization } from '../config/constants';
 import { 
@@ -118,6 +120,9 @@ const Agent2Dashboard = () => {
   const [showViewModal, setShowViewModal] = useState(false);
   const [showEditModal, setShowEditModal] = useState(false);
   const [showCreateForm, setShowCreateForm] = useState(false);  // New lead creation form
+  const [showNotesModal, setShowNotesModal] = useState(false);  // Notes modal
+  // eslint-disable-next-line no-unused-vars
+  const [notesPos, setNotesPos] = useState({ x: window.innerWidth - 390, y: 80 });
   const [updating, setUpdating] = useState(false);
   const [submitting, setSubmitting] = useState(false);  // For lead creation
   
@@ -316,7 +321,8 @@ const Agent2Dashboard = () => {
       if (filters.qualificationStatus) params.append('qualificationStatus', filters.qualificationStatus);
       if (filters.progressStatus) params.append('progressStatus', filters.progressStatus);
 
-      // Agent2 always shows today's leads only - no date filter parameters sent to server
+      // Agent2 always shows today's leads only
+      params.append('dateFilterType', 'today');
 
       const response = await axios.get(`/api/leads?${params.toString()}`);
       const responseData = response.data?.data;
@@ -1043,7 +1049,7 @@ const Agent2Dashboard = () => {
               {leads.map((lead) => {
                 const isInbound = !!(lead.vicidialDid && lead.vicidialDid.trim());
                 return (
-                <tr key={lead.leadId || lead._id} className={isInbound ? 'bg-red-50 hover:bg-red-100 border-l-4 border-l-red-500' : 'hover:bg-gray-50'}>
+                <tr key={lead.leadId || lead._id} className={isInbound ? 'bg-red-50 hover:bg-red-100 border-l-4 border-l-red-500' : 'bg-blue-50 hover:bg-blue-100 border-l-4 border-l-blue-500'}>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div>
                       {/* Inbound / Outbound call-type badge */}
@@ -1053,8 +1059,8 @@ const Agent2Dashboard = () => {
                           <span className="font-mono text-[9px] text-red-500 ml-0.5">DID:{lead.vicidialDid}</span>
                         </div>
                       ) : (
-                        <div className="mb-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-500 text-[10px]">
-                          <span>📤</span> Outbound
+                        <div className="mb-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 border border-blue-300 text-blue-700 text-[10px] font-bold">
+                          <span>📤</span> OUTBOUND
                         </div>
                       )}
                       <div className="text-sm font-medium text-gray-900">{lead.name}</div>
@@ -1490,6 +1496,15 @@ const Agent2Dashboard = () => {
               <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 21l-4.35-4.35M11 19a8 8 0 100-16 8 8 0 000 16z" />
             </svg>
             People Search
+          </button>
+          {/* My Notes Button */}
+          <button
+            onClick={() => setShowNotesModal(true)}
+            className="inline-flex items-center gap-2 px-4 py-2 rounded-lg text-sm font-semibold text-white transition-all duration-200 active:scale-95 shadow-md bg-gradient-to-r from-amber-500 to-yellow-500 hover:from-amber-600 hover:to-yellow-600"
+            title="Open My Notes"
+          >
+            <StickyNote className="h-4 w-4" />
+            My Notes
           </button>
           {/* Create Lead Button - Only for Agent2 */}
           {user.role === 'agent2' && (
@@ -1940,7 +1955,7 @@ const Agent2Dashboard = () => {
               {stats.todaysLeads?.map((lead) => {
                 const isInbound = !!(lead.vicidialDid && lead.vicidialDid.trim());
                 return (
-                <tr key={lead.leadId || lead._id} className={isInbound ? 'bg-red-50 hover:bg-red-100 border-l-4 border-l-red-500' : 'hover:bg-gray-50'}>
+                <tr key={lead.leadId || lead._id} className={isInbound ? 'bg-red-50 hover:bg-red-100 border-l-4 border-l-red-500' : 'bg-blue-50 hover:bg-blue-100 border-l-4 border-l-blue-500'}>
                   <td className="px-6 py-4 whitespace-nowrap">
                     <div>
                       {/* Inbound / Outbound call-type badge */}
@@ -1950,8 +1965,8 @@ const Agent2Dashboard = () => {
                           <span className="font-mono text-[9px] text-red-500 ml-0.5">DID:{lead.vicidialDid}</span>
                         </div>
                       ) : (
-                        <div className="mb-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-50 border border-blue-200 text-blue-500 text-[10px]">
-                          <span>📤</span> Outbound
+                        <div className="mb-1 inline-flex items-center gap-1 px-2 py-0.5 rounded-full bg-blue-100 border border-blue-300 text-blue-700 text-[10px] font-bold">
+                          <span>📤</span> OUTBOUND
                         </div>
                       )}
                       <div className="text-sm font-medium text-gray-900">{lead.name}</div>
@@ -3456,6 +3471,13 @@ const Agent2Dashboard = () => {
           )}
         </div>
       )}
+
+      {/* Agent Notes PiP */}
+      <AgentNotesPad 
+        show={showNotesModal}
+        onClose={() => setShowNotesModal(false)}
+        initialPos={notesPos}
+      />
     </div>
   );
 };

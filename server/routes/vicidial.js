@@ -6,6 +6,11 @@ const { protect, authorize } = require('../middleware/auth');
 
 const router = express.Router();
 
+// GTI organization name check
+const GTI_ORG_CANONICAL_NAME = (process.env.GTI_ORG_NAME || 'GTI').trim().toUpperCase();
+const normalizeOrgName = (name = '') => name.trim().toUpperCase();
+const isGtiOrganizationName = (name) => !!name && normalizeOrgName(name) === GTI_ORG_CANONICAL_NAME;
+
 /**
  * Parse a raw string body from Vicidial into a key-value object.
  * Supports:
@@ -121,11 +126,36 @@ router.post('/call-data', async (req, res) => {
 
     const did = (payload.did || payload.DID || '').toString().trim();
 
+    console.log(`[ViciDial POST] Looking up agent with vicidialAgentId: ${vicidialAgentId}`);
+
     // Look up the LMS user mapped to this Vicidial agent ID
     const agent = await User.findOne({
       vicidialAgentId: vicidialAgentId,
       isActive: true,
     }).populate('organization');
+
+    console.log(`[ViciDial POST] Agent found: ${!!agent}, Organization: ${agent?.organization?.name || 'N/A'}`);
+
+    // GTI organization restriction: MUST have DID (inbound calls only)
+    if (agent && agent.organization) {
+      const isGtiAgent = isGtiOrganizationName(agent.organization.name);
+      console.log(`[ViciDial POST] Agent: ${agent.name}, Org: ${agent.organization.name}, IsGTI: ${isGtiAgent}, DID: '${did}', DID Length: ${did.length}`);
+      
+      if (isGtiAgent && (!did || did.length === 0)) {
+        console.log(`❌ GTI organization call REJECTED - no DID. Agent: ${agent.name}, Phone: ${phoneNumber}, DID: '${did}'`);
+        return res.status(403).json({
+          success: false,
+          message: 'GTI organization only accepts inbound calls with DID',
+          agentId: vicidialAgentId,
+          organizationName: agent.organization.name,
+          reason: 'Missing or empty DID field'
+        });
+      } else if (isGtiAgent) {
+        console.log(`✅ GTI organization call ACCEPTED with DID: ${did}`);
+      }
+    } else {
+      console.log(`[ViciDial POST] Agent not found or no organization for vicidialAgentId: ${vicidialAgentId}`);
+    }
 
     // Build the call document
     const callData = {
@@ -255,10 +285,35 @@ router.get('/call-data', async (req, res) => {
 
     const did = (payload.did || payload.DID || '').toString().trim();
 
+    console.log(`[ViciDial GET] Looking up agent with vicidialAgentId: ${vicidialAgentId}`);
+
     const agent = await User.findOne({
       vicidialAgentId: vicidialAgentId,
       isActive: true,
     }).populate('organization');
+
+    console.log(`[ViciDial GET] Agent found: ${!!agent}, Organization: ${agent?.organization?.name || 'N/A'}`);
+
+    // GTI organization restriction: MUST have DID (inbound calls only)
+    if (agent && agent.organization) {
+      const isGtiAgent = isGtiOrganizationName(agent.organization.name);
+      console.log(`[ViciDial GET] Agent: ${agent.name}, Org: ${agent.organization.name}, IsGTI: ${isGtiAgent}, DID: '${did}', DID Length: ${did.length}`);
+      
+      if (isGtiAgent && (!did || did.length === 0)) {
+        console.log(`❌ GTI organization call REJECTED (GET) - no DID. Agent: ${agent.name}, Phone: ${phoneNumber}, DID: '${did}'`);
+        return res.status(403).json({
+          success: false,
+          message: 'GTI organization only accepts inbound calls with DID',
+          agentId: vicidialAgentId,
+          organizationName: agent.organization.name,
+          reason: 'Missing or empty DID field'
+        });
+      } else if (isGtiAgent) {
+        console.log(`✅ GTI organization call ACCEPTED (GET) with DID: ${did}`);
+      }
+    } else {
+      console.log(`[ViciDial GET] Agent not found or no organization for vicidialAgentId: ${vicidialAgentId}`);
+    }
 
     const callData = {
       vicidialAgentId,
