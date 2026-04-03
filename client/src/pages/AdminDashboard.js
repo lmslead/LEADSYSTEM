@@ -25,6 +25,7 @@ import SuperUserManagement from '../components/SuperUserManagement';
 import OrganizationManagement from './OrganizationManagement';
 import LeadReassignModal from '../components/LeadReassignModal';
 import AdminUploadShareModal from '../components/AdminUploadShareModal';
+import WebsiteLeadsModal from '../components/WebsiteLeadsModal';
 import Pagination from '../components/Pagination';
 import { useSocket } from '../contexts/SocketContext';
 import { useAuth } from '../contexts/AuthContext';
@@ -142,6 +143,10 @@ const AdminDashboard = () => {
 
   // Admin upload share modal
   const [showShareModal, setShowShareModal] = useState(false);
+
+  // Website leads modal (Reddington admin only)
+  const [showWebsiteLeads, setShowWebsiteLeads] = useState(false);
+  const [websiteLeadsBadge, setWebsiteLeadsBadge] = useState(0);
   
   const maskEmail = (email) => {
     if (!email) return '—';
@@ -632,9 +637,17 @@ const AdminDashboard = () => {
         debouncedRefresh();
       };
 
+      const handleNewWebsiteLead = (data) => {
+        if (isReddingtonAdmin) {
+          setWebsiteLeadsBadge(n => n + 1);
+          toast.success(`New website lead: ${data.name}`, { duration: 4000, icon: '🌐' });
+        }
+      };
+
       socket.on('leadUpdated', handleLeadUpdated);
       socket.on('leadCreated', handleLeadCreated);
       socket.on('leadDeleted', handleLeadDeleted);
+      socket.on('newWebsiteLead', handleNewWebsiteLead);
 
       // Cleanup socket listeners and timeout
       return () => {
@@ -644,6 +657,7 @@ const AdminDashboard = () => {
         socket.off('leadUpdated', handleLeadUpdated);
         socket.off('leadCreated', handleLeadCreated);
         socket.off('leadDeleted', handleLeadDeleted);
+        socket.off('newWebsiteLead', handleNewWebsiteLead);
       };
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
@@ -963,6 +977,25 @@ const AdminDashboard = () => {
                   {formatEasternTimeForDisplay(lastUpdated, { includeTimezone: true })}
                 </p>
               </div>
+              {/* Website Leads button — Reddington org only */}
+              {isReddingtonAdmin && (
+                <button
+                  onClick={() => { setShowWebsiteLeads(true); setWebsiteLeadsBadge(0); }}
+                  className="relative flex items-center gap-2 px-3 py-2 rounded-lg text-sm font-semibold text-white transition-all duration-200 active:scale-95 shadow-md"
+                  style={{ background: 'linear-gradient(135deg,#0d9488,#0891b2)', boxShadow: '0 4px 12px rgba(8,145,178,0.4)' }}
+                  title="View website form submissions"
+                >
+                  <svg className="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 01-9 9m9-9a9 9 0 00-9-9m9 9H3m9 9a9 9 0 01-9-9m9 9c1.657 0 3-4.03 3-9s-1.343-9-3-9m0 18c-1.657 0-3-4.03-3-9s1.343-9 3-9" />
+                  </svg>
+                  Website Leads
+                  {websiteLeadsBadge > 0 && (
+                    <span className="absolute -top-1.5 -right-1.5 min-w-[18px] h-[18px] flex items-center justify-center bg-red-500 text-white text-[10px] font-bold rounded-full px-1">
+                      {websiteLeadsBadge > 99 ? '99+' : websiteLeadsBadge}
+                    </span>
+                  )}
+                </button>
+              )}
               {/* People Search PiP launcher — Reddington org only */}
               {isReddingtonAdmin && (
                 <button
@@ -2602,6 +2635,11 @@ const AdminDashboard = () => {
         isOpen={showShareModal}
         onClose={() => setShowShareModal(false)}
       />
+
+      {/* Website Leads Modal — Reddington admin only */}
+      {isReddingtonAdmin && showWebsiteLeads && (
+        <WebsiteLeadsModal onClose={() => setShowWebsiteLeads(false)} />
+      )}
       </div>
 
       {/* Floating People Search PiP Panel — Reddington org only */}

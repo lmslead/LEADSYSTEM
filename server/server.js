@@ -25,6 +25,8 @@ const gtiIncomingRoutes = require('./routes/gtiIncoming');
 const adminUploadRoutes = require('./routes/adminUploads');
 const vicidialRoutes = require('./routes/vicidial');
 const notesRoutes = require('./routes/notes');
+const webhookRoutes = require('./routes/webhook');
+const websiteLeadsRoutes = require('./routes/websiteLeads');
 
 const app = express();
 const server = http.createServer(app);
@@ -157,6 +159,8 @@ app.use('/api/gti', gtiIncomingRoutes);
 app.use('/api/admin-uploads', adminUploadRoutes);
 app.use('/api/vicidial', vicidialRoutes);
 app.use('/api/notes', notesRoutes);
+app.use('/api/webhook', webhookRoutes);
+app.use('/api/website-leads', websiteLeadsRoutes);
 
 // =========================
 // HEALTH CHECK
