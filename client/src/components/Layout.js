@@ -29,7 +29,7 @@ const Layout = ({ onDashboardRefresh }) => {
   // Prevent copying FROM the dashboard for restricted roles.
   // Paste INTO the dashboard is intentionally allowed.
   useEffect(() => {
-    const restrictedRoles = ['admin', 'agent2', 'restricted_admin'];
+    const restrictedRoles = ['admin', 'agent1', 'agent2', 'restricted_admin'];
     if (!user || !restrictedRoles.includes(user.role)) return;
 
     const block = (e) => e.preventDefault();
