@@ -4,6 +4,7 @@ const User = require('../models/User');
 const Organization = require('../models/Organization');
 const { protect, generateToken } = require('../middleware/auth');
 const handleValidationErrors = require('../middleware/validation');
+const { notifyCheckIn, notifyCheckOut } = require('../services/hrmsAttendance');
 
 // Helper: check if a user is the Reddington Global Consultancy admin
 const isReddingtonAdminUser = async (user) => {
@@ -300,6 +301,7 @@ router.post('/login', loginValidation, handleValidationErrors, async (req, res) 
     // Generate token
     const token = generateToken(user._id);
 
+    notifyCheckIn(user.email); // HRMS check-in — fire-and-forget
     res.status(200).json({
       success: true,
       message: 'Login successful',
@@ -475,6 +477,7 @@ router.put('/change-password', protect, [
 // @route   POST /api/auth/logout
 // @access  Private
 router.post('/logout', protect, (req, res) => {
+  notifyCheckOut(req.user.email); // HRMS check-out — fire-and-forget
   res.status(200).json({
     success: true,
     message: 'Logged out successfully'
