@@ -82,6 +82,15 @@ const leadSchema = new mongoose.Schema({
     index: true,
   },
 
+  // Vicidial campaign name — populated from the campaignName field of the VicidialCall
+  // that triggered this lead. Used by the affiliate dashboard to filter by campaign.
+  vicidialCampaignName: {
+    type: String,
+    trim: true,
+    index: true,
+    sparse: true,
+  },
+
   gtiPostbackHistory: [{
     eventType: {
       type: String,

@@ -97,6 +97,8 @@ const Agent1Dashboard = () => {
   const [activeVicidialCallId, setActiveVicidialCallId] = useState(null);
   // DID number from inbound call (present = inbound, absent = outbound)
   const [activeVicidialDid, setActiveVicidialDid] = useState('');
+  // Campaign name from the active Vicidial call (used for affiliate dashboard filtering)
+  const [activeVicidialCampaign, setActiveVicidialCampaign] = useState('');
   // Notes modal state
   const [showNotesModal, setShowNotesModal] = useState(false);
   // eslint-disable-next-line no-unused-vars
@@ -211,6 +213,7 @@ const Agent1Dashboard = () => {
     setIsFormActive(false);
     setActiveVicidialCallId(null);
     setActiveVicidialDid('');
+    setActiveVicidialCampaign('');
     clearActiveInboundCall();
     resetGtiDispositionState();
     setFormErrors({ phone: '', alternatePhone: '', dispositionReason: '' });
@@ -260,6 +263,7 @@ const Agent1Dashboard = () => {
     // Track which vicidial call we are processing
     setActiveVicidialCallId(callData._vicidialCallId || null);
     setActiveVicidialDid(callData._vicidialDid || '');
+    setActiveVicidialCampaign(callData._vicidialCampaign || '');
     setIsFormActive(true);
 
     // Propagate inbound DID to the global context so the Layout-level banner appears
@@ -670,6 +674,11 @@ const Agent1Dashboard = () => {
       // Stamp DID on the lead so it can be identified as inbound later
       if (activeVicidialCallId && activeVicidialDid && activeVicidialDid.trim() !== '') {
         cleanFormData.vicidialDid = activeVicidialDid.trim();
+      }
+
+      // Stamp campaign name for affiliate dashboard filtering
+      if (activeVicidialCallId && activeVicidialCampaign && activeVicidialCampaign.trim() !== '') {
+        cleanFormData.vicidialCampaignName = activeVicidialCampaign.trim();
       }
 
       if (shouldDisposeLead) {

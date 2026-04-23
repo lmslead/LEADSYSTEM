@@ -14,7 +14,8 @@ import {
   Bell,
   Settings,
   Shield,
-  Database
+  Database,
+  MessageSquare
 } from 'lucide-react';
 import LoadingSpinner from './LoadingSpinner';
 import toast from 'react-hot-toast';
@@ -99,25 +100,33 @@ const Layout = ({ onDashboardRefresh }) => {
       return [
         { name: 'SuperAdmin', href: '/superadmin', icon: Shield },
         { name: 'Today Leads', href: '/leads', icon: Users },
+        { name: 'Chat', href: '/chat', icon: MessageSquare },
         ...baseItems
       ];
     } else if (user.role === 'admin') {
       return [
         { name: 'Dashboard', href: '/admin', icon: BarChart3 },
         { name: 'Today Leads', href: '/leads', icon: Users },
+        { name: 'Chat', href: '/chat', icon: MessageSquare },
         ...baseItems
       ];
     } else if (user.role === 'agent2') {
       return [
-        { name: 'Leads', href: '/leads', icon: Users }
+        { name: 'Leads', href: '/leads', icon: Users },
+        { name: 'Chat', href: '/chat', icon: MessageSquare },
       ];
     } else if (user.role === 'restricted_admin') {
       return [
         { name: 'Dashboard', href: '/restricted-dashboard', icon: Database }
       ];
+    } else if (user.role === 'affiliate_admin') {
+      return [
+        { name: 'Dashboard', href: '/affiliate', icon: Database }
+      ];
     } else {
       return [
         { name: 'Dashboard', href: '/dashboard', icon: Home },
+        { name: 'Chat', href: '/chat', icon: MessageSquare },
         ...baseItems
       ];
     }
@@ -173,7 +182,8 @@ const Layout = ({ onDashboardRefresh }) => {
                 {user.role === 'agent1' ? 'Lead Generator' : 
                  user.role === 'agent2' ? 'Lead Follower' : 
                  user.role === 'admin' ? 'Administrator' : 
-                 user.role === 'restricted_admin' ? 'Restricted Admin' : 'Super Administrator'}
+                 user.role === 'restricted_admin' ? 'Restricted Admin' :
+                 user.role === 'affiliate_admin' ? 'Affiliate Admin' : 'Super Administrator'}
               </p>
             </div>
           </div>

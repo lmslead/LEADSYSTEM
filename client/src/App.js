@@ -14,7 +14,9 @@ import Agent2Dashboard from './pages/Agent2Dashboard';
 import AdminDashboard from './pages/AdminDashboard';
 import SuperAdminDashboard from './pages/SuperAdminDashboard';
 import RestrictedAdminDashboard from './pages/RestrictedAdminDashboard';
+import AffiliateDashboard from './pages/AffiliateDashboard';
 import Profile from './pages/Profile';
+import Chat from './pages/Chat';
 
 function App() {
   return (
@@ -97,6 +99,18 @@ function App() {
                 <Route path="restricted-dashboard" element={
                   <ProtectedRoute roles={['restricted_admin', 'superadmin']}>
                     <RestrictedAdminDashboard />
+                  </ProtectedRoute>
+                } />
+
+                <Route path="affiliate" element={
+                  <ProtectedRoute roles={['affiliate_admin', 'superadmin']}>
+                    <AffiliateDashboard />
+                  </ProtectedRoute>
+                } />
+
+                <Route path="chat" element={
+                  <ProtectedRoute>
+                    <Chat />
                   </ProtectedRoute>
                 } />
               </Route>
