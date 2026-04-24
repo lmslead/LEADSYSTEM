@@ -344,9 +344,13 @@ router.get('/stats', protect, requireRoles('restricted_admin', 'admin', 'superad
         $group: {
           _id: null,
           totalLeads: { $sum: 1 },
-          totalDebt: {
+          enrolledDebt: {
             $sum: {
-              $convert: { input: '$debt', to: 'double', onError: 0, onNull: 0 }
+              $cond: [
+                { $regexMatch: { input: { $ifNull: ['$status', ''] }, regex: /^sale$/i } },
+                { $convert: { input: '$custom1', to: 'double', onError: 0, onNull: 0 } },
+                0
+              ]
             }
           },
           salesClosed: {
@@ -364,6 +368,30 @@ router.get('/stats', protect, requireRoles('restricted_admin', 'admin', 'superad
                 1, 0
               ]
             }
+          },
+          dnc: {
+            $sum: {
+              $cond: [
+                { $regexMatch: { input: { $ifNull: ['$status', ''] }, regex: /^DNC$/i } },
+                1, 0
+              ]
+            }
+          },
+          wnu: {
+            $sum: {
+              $cond: [
+                { $regexMatch: { input: { $ifNull: ['$status', ''] }, regex: /^WNU$/i } },
+                1, 0
+              ]
+            }
+          },
+          lb: {
+            $sum: {
+              $cond: [
+                { $regexMatch: { input: { $ifNull: ['$status', ''] }, regex: /^LB$/i } },
+                1, 0
+              ]
+            }
           }
         }
       }
@@ -373,9 +401,12 @@ router.get('/stats', protect, requireRoles('restricted_admin', 'admin', 'superad
       success: true,
       data: {
         totalLeads: result?.totalLeads || 0,
-        totalDebt: result?.totalDebt || 0,
+        enrolledDebt: result?.enrolledDebt || 0,
         salesClosed: result?.salesClosed || 0,
-        notQualified: result?.notQualified || 0
+        notQualified: result?.notQualified || 0,
+        dnc: result?.dnc || 0,
+        wnu: result?.wnu || 0,
+        lb: result?.lb || 0
       }
     });
   } catch (err) {

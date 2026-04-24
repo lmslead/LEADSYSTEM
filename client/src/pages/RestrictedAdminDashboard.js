@@ -11,7 +11,10 @@ import {
   Users,
   DollarSign,
   TrendingUp,
-  XCircle
+  XCircle,
+  PhoneOff,
+  AlertTriangle,
+  Globe
 } from 'lucide-react';
 import axios from '../utils/axios';
 import toast from 'react-hot-toast';
@@ -97,7 +100,7 @@ const RestrictedAdminDashboard = () => {
   const customEndRef = useRef('');
 
   // Stats
-  const [stats, setStats] = useState({ totalLeads: 0, totalDebt: 0, salesClosed: 0, notQualified: 0 });
+  const [stats, setStats] = useState({ totalLeads: 0, enrolledDebt: 0, salesClosed: 0, notQualified: 0, dnc: 0, wnu: 0, lb: 0 });
 
   // Status filter (server-side)
   const [statusFilter, setStatusFilter] = useState('');
@@ -344,7 +347,7 @@ const RestrictedAdminDashboard = () => {
         </div>
 
         {/* ── Stat Cards ──────────────────────────────────────────── */}
-        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+        <div className="grid grid-cols-2 lg:grid-cols-4 xl:grid-cols-7 gap-4">
           {/* Total Leads */}
           <div className="relative overflow-hidden bg-white rounded-2xl shadow-sm border border-gray-100 p-5 group hover:shadow-md transition-shadow">
             <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-blue-50 to-transparent rounded-bl-full" />
@@ -359,7 +362,7 @@ const RestrictedAdminDashboard = () => {
             </div>
           </div>
 
-          {/* Total Debt */}
+          {/* Enrolled Debt */}
           <div className="relative overflow-hidden bg-white rounded-2xl shadow-sm border border-gray-100 p-5 group hover:shadow-md transition-shadow">
             <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-green-50 to-transparent rounded-bl-full" />
             <div className="relative flex items-start gap-3">
@@ -367,8 +370,9 @@ const RestrictedAdminDashboard = () => {
                 <DollarSign size={22} className="text-white" />
               </div>
               <div className="flex-1 min-w-0">
-                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Total Debt</p>
-                <p className="text-2xl font-extrabold text-gray-900 mt-1">${stats.totalDebt.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Enrolled Debt</p>
+                <p className="text-2xl font-extrabold text-gray-900 mt-1">${stats.enrolledDebt.toLocaleString(undefined, { maximumFractionDigits: 0 })}</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">SALE leads only</p>
               </div>
             </div>
           </div>
@@ -397,6 +401,51 @@ const RestrictedAdminDashboard = () => {
               <div className="flex-1 min-w-0">
                 <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">Not Qualified</p>
                 <p className="text-2xl font-extrabold text-gray-900 mt-1">{stats.notQualified.toLocaleString()}</p>
+              </div>
+            </div>
+          </div>
+
+          {/* DNC - Do Not Contact */}
+          <div className="relative overflow-hidden bg-white rounded-2xl shadow-sm border border-gray-100 p-5 group hover:shadow-md transition-shadow">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-orange-50 to-transparent rounded-bl-full" />
+            <div className="relative flex items-start gap-3">
+              <div className="p-3 bg-gradient-to-br from-orange-500 to-orange-600 rounded-xl shadow-lg shadow-orange-500/25">
+                <PhoneOff size={22} className="text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">DNC</p>
+                <p className="text-2xl font-extrabold text-gray-900 mt-1">{stats.dnc.toLocaleString()}</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">Do Not Contact</p>
+              </div>
+            </div>
+          </div>
+
+          {/* WNU - Wrong Number */}
+          <div className="relative overflow-hidden bg-white rounded-2xl shadow-sm border border-gray-100 p-5 group hover:shadow-md transition-shadow">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-amber-50 to-transparent rounded-bl-full" />
+            <div className="relative flex items-start gap-3">
+              <div className="p-3 bg-gradient-to-br from-amber-500 to-yellow-600 rounded-xl shadow-lg shadow-amber-500/25">
+                <AlertTriangle size={22} className="text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">WNU</p>
+                <p className="text-2xl font-extrabold text-gray-900 mt-1">{stats.wnu.toLocaleString()}</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">Wrong Number</p>
+              </div>
+            </div>
+          </div>
+
+          {/* LB - Language Barrier */}
+          <div className="relative overflow-hidden bg-white rounded-2xl shadow-sm border border-gray-100 p-5 group hover:shadow-md transition-shadow">
+            <div className="absolute top-0 right-0 w-24 h-24 bg-gradient-to-bl from-purple-50 to-transparent rounded-bl-full" />
+            <div className="relative flex items-start gap-3">
+              <div className="p-3 bg-gradient-to-br from-purple-500 to-violet-600 rounded-xl shadow-lg shadow-purple-500/25">
+                <Globe size={22} className="text-white" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <p className="text-xs font-semibold text-gray-400 uppercase tracking-wider">LB</p>
+                <p className="text-2xl font-extrabold text-gray-900 mt-1">{stats.lb.toLocaleString()}</p>
+                <p className="text-[10px] text-gray-400 mt-0.5">Language Barrier</p>
               </div>
             </div>
           </div>
