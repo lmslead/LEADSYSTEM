@@ -178,11 +178,14 @@ const AffiliateDashboard = () => {
   const statusPill = (status) => {
     if (!status) return null;
     const isSale = SALE_STATUSES.includes(status);
+    const isPending = ['Pending', 'pending', 'active'].includes(status);
     return (
       <span
         className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-xs font-semibold whitespace-nowrap"
         style={isSale
           ? { background: '#dcfce7', color: '#15803d' }
+          : isPending
+          ? { background: '#fef3c7', color: '#92400e' }
           : { background: '#f3f4f6', color: '#6b7280' }}
       >
         {isSale ? <CheckCircle2 size={11} /> : <Clock size={11} />}
@@ -240,7 +243,7 @@ const AffiliateDashboard = () => {
               <p className="text-sm mt-0.5" style={{ color: '#94a3b8' }}>
                 Campaign&nbsp;
                 <span className="font-semibold" style={{ color: '#FDE047' }}>
-                  Closers_OB&nbsp;/&nbsp;CloserOB
+                  GTIOB
                 </span>
                 &nbsp;· Inbound Vicidial Leads
               </p>
@@ -418,7 +421,7 @@ const AffiliateDashboard = () => {
               <p className="text-sm text-slate-400">
                 {startDate || endDate || saleOnly
                   ? 'Try adjusting your filters'
-                  : 'No Closers_OB / CloserOB campaign leads in the system yet'}
+                  : 'No GTIOB campaign leads or calls in the system yet'}
               </p>
             </div>
           ) : (
