@@ -30,7 +30,7 @@ const notesRoutes = require('./routes/notes');
 const webhookRoutes = require('./routes/webhook');
 const websiteLeadsRoutes = require('./routes/websiteLeads');
 const affiliateRoutes = require('./routes/affiliate');
-const metaLeadRoutes = require('./routes/metaLeadRoutes');
+const metaLeadRoutes = require('./routes/meta/metaLeadRoutes');
 
 const app = express();
 const server = http.createServer(app);

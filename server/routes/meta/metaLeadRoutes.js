@@ -1,7 +1,7 @@
 const express = require('express');
 const cors = require('cors');
 const rateLimit = require('express-rate-limit');
-const metaLeadController = require('../controllers/metaLeadController');
+const metaLeadController = require('../../controllers/meta/metaLeadController');
 
 const router = express.Router();
 

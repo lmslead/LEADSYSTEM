@@ -1,5 +1,5 @@
-const metaLeadService = require('../services/metaLeadService');
-const MetaLeadPayload = require('../models/MetaLeadPayload');
+const metaLeadService = require('../../services/meta/metaLeadService');
+const MetaLeadPayload = require('../../models/meta/MetaLeadPayload');
 
 /**
  * GET /api/meta/webhook

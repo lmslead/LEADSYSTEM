@@ -1,9 +1,9 @@
 const crypto = require('crypto');
 const https = require('https');
-const Lead = require('../models/Lead');
-const MetaLeadPayload = require('../models/MetaLeadPayload');
-const Organization = require('../models/Organization');
-const User = require('../models/User');
+const Lead = require('../../models/Lead');
+const MetaLeadPayload = require('../../models/meta/MetaLeadPayload');
+const Organization = require('../../models/Organization');
+const User = require('../../models/User');
 
 /**
  * Verify X-Hub-Signature-256 header sent by Meta Webhooks.
